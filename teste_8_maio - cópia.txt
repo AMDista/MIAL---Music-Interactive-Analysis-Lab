@@ -1,0 +1,356 @@
+import os
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from music21 import converter, stream, environment, chord, note, roman, meter, interval
+from collections import Counter
+import xml.etree.ElementTree as ET
+import datetime  # coloca este import no topo do ficheiro também
+
+def obter_titulo_do_xml(file_path):
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+    
+    for credit in root.findall("credit"):
+        credit_type = credit.find("credit-type")
+        if credit_type is not None and credit_type.text == "title":
+            credit_words = credit.find("credit-words")
+            if credit_words is not None:
+                return credit_words.text
+    return "Sem título"
+
+
+class PartituraApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Analisador de Partituras – Funções Tonais e Melódicas")
+        self.root.geometry("600x450")
+        self.root.resizable(False, False)
+
+        # Caminho para MuseScore (ajustar conforme necessário)
+        user_env = environment.UserSettings()
+        user_env['musicxmlPath'] = '/Applications/MuseScore 4.app/Contents/MacOS/mscore'
+        user_env['musescoreDirectPNGPath'] = '/Applications/MuseScore 4.app/Contents/MacOS/mscore'
+
+        self.score = None
+        self.instrumentos = []
+        self.check_vars = []
+
+        # Botão para abrir ficheiro
+        self.open_button = tk.Button(root, text="Abrir MusicXML", command=self.abrir_ficheiro)
+        self.open_button.pack(pady=10)
+
+        # Label para escolha de instrumentos
+        self.instr_label = tk.Label(root, text="Escolha os Instrumentos para Análise Harmónica:")
+        self.instr_label.pack()
+
+        # Frame com Scrollbar para instrumentos
+        instr_frame_container = tk.Frame(root)
+        instr_frame_container.pack()
+
+        self.canvas = tk.Canvas(instr_frame_container, width=550, height=150)
+        scrollbar = tk.Scrollbar(instr_frame_container, orient="vertical", command=self.canvas.yview)
+        self.check_frame = tk.Frame(self.canvas)
+
+        self.check_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(
+                scrollregion=self.canvas.bbox("all")
+            )
+        )
+
+        self.canvas.create_window((0, 0), window=self.check_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Opções para análise melódica
+        self.melodic_frame = tk.LabelFrame(root, text="Opções de Análise Melódica")
+        self.melodic_frame.pack(pady=10, fill="x", padx=10)
+
+        self.analisar_intervalos_var = tk.IntVar()
+        self.analisar_direcao_var = tk.IntVar()
+
+        self.intervalos_chk = tk.Checkbutton(self.melodic_frame, text="Analisar Intervalos Mais Comuns", variable=self.analisar_intervalos_var)
+        self.direcao_chk = tk.Checkbutton(self.melodic_frame, text="Analisar Direção Melódica Predominante", variable=self.analisar_direcao_var)
+
+        self.intervalos_chk.pack(anchor='w', padx=10, pady=2)
+        self.direcao_chk.pack(anchor='w', padx=10, pady=2)
+
+        self.analise_ritmica_var = tk.IntVar()
+        self.ritmo_chk = tk.Checkbutton(self.melodic_frame, text="Analisar Ritmo (valores e densidade)", variable=self.analise_ritmica_var)
+        self.ritmo_chk.pack(anchor='w', padx=10, pady=2)
+
+        # Botão para processar
+        self.process_button = tk.Button(root, text="Gerar Relatório", command=self.processar)
+        self.process_button.pack(pady=10)
+
+
+    def abrir_ficheiro(self):
+        file_path = filedialog.askopenfilename(filetypes=[("MusicXML files", "*.xml *.musicxml")])
+        if file_path:
+            self.score = converter.parse(file_path)
+            self.ultimo_ficheiro = file_path  # Guardar o caminho para usar depois no relatório
+            self.instrumentos = []
+            self.check_vars = []
+
+            for widget in self.check_frame.winfo_children():
+                widget.destroy()
+
+            for idx, part in enumerate(self.score.parts):
+                nome = part.partName if part.partName else f"Parte {idx+1}"
+                self.instrumentos.append((idx, nome))
+
+                var = tk.IntVar()
+                chk = tk.Checkbutton(self.check_frame, text=nome, variable=var)
+                chk.pack(anchor='w')
+                self.check_vars.append(var)
+
+    def processar(self):
+        if not self.score:
+            messagebox.showerror("Erro", "Nenhuma partitura carregada.")
+            return
+
+        indices = [i for i, var in enumerate(self.check_vars) if var.get() == 1]
+        if not indices:
+            messagebox.showerror("Erro", "Nenhum instrumento selecionado para a análise harmónica.")
+            return
+        
+        titulo = obter_titulo_do_xml(self.ultimo_ficheiro)  # self.ultimo_ficheiro é o caminho que usaste para abrir
+
+
+
+        # Parte 1 - Análise geral da partitura completa
+        total_instrumentos = len(self.score.parts)
+        nomes_instrumentos = [p.partName if p.partName else f"Parte {i+1}" for i, p in enumerate(self.score.parts)]
+
+        tonalidade_geral = self.score.analyze('key')
+        total_compassos = len(self.score.parts[0].getElementsByClass('Measure'))
+
+        time_signatures = set()
+        for ts in self.score.recurse().getElementsByClass(meter.TimeSignature):
+            time_signatures.add(ts.ratioString)
+
+        notas_por_instrumento = {}
+        for p in self.score.parts:
+            notas = p.recurse().notes
+            notas_por_instrumento[p.partName if p.partName else "Parte"] = len(notas)
+
+        # Parte 2 - Análise melódica global (por instrumento)
+        analise_melodica = {}
+
+        # Garante que todos os instrumentos têm entrada no dicionário
+        for p in self.score.parts:
+            nome = p.partName if p.partName else "Parte"
+            analise_melodica[nome] = {}
+
+        # ----> ANALISE MELÓDICA
+        if self.analisar_intervalos_var.get() or self.analisar_direcao_var.get():
+            for p in self.score.parts:
+                nome = p.partName if p.partName else "Parte"
+                notas = [n for n in p.recurse().notes if isinstance(n, note.Note)]
+
+                intervalo_counter = Counter()
+                ascendentes = descendentes = 0
+
+                for i in range(1, len(notas)):
+                    intv = interval.Interval(notas[i - 1], notas[i])
+                    intervalo_nome = intv.directedName
+
+                    if self.analisar_intervalos_var.get():
+                        intervalo_counter[intervalo_nome] += 1
+
+                    if self.analisar_direcao_var.get():
+                        if intv.semitones > 0:
+                            ascendentes += 1
+                        elif intv.semitones < 0:
+                            descendentes += 1
+
+                total_movimentos = ascendentes + descendentes
+                direcao_media = (ascendentes - descendentes) / total_movimentos if total_movimentos > 0 else 0
+
+                analise_melodica[nome]["intervalos"] = intervalo_counter
+                analise_melodica[nome]["ascendentes"] = ascendentes
+                analise_melodica[nome]["descendentes"] = descendentes
+                analise_melodica[nome]["direcao_media"] = direcao_media
+
+        # ----> ANALISE RÍTMICA
+        if self.analise_ritmica_var.get():
+            for p in self.score.parts:
+                nome = p.partName if p.partName else "Parte"
+                notas = [n for n in p.recurse().notes if isinstance(n, note.Note)]
+
+                valores_ritmicos = Counter()
+                total_notas = len(notas)
+                total_compassos = len(p.getElementsByClass('Measure'))
+
+                for n in notas:
+                    duracao = n.quarterLength
+                    if duracao >= 4.0:
+                        nome_valor = "Semibreve"
+                    elif duracao >= 2.0:
+                        nome_valor = "Mínima"
+                    elif duracao >= 1.0:
+                        nome_valor = "Semínima"
+                    elif duracao >= 0.5:
+                        nome_valor = "Colcheia"
+                    elif duracao >= 0.25:
+                        nome_valor = "Semicolcheia"
+                    else:
+                        nome_valor = "Valor menor"
+
+                    valores_ritmicos[nome_valor] += 1
+
+                densidade = total_notas / total_compassos if total_compassos > 0 else 0
+
+                analise_melodica[nome]["ritmo"] = {
+                    "valores": valores_ritmicos,
+                    "densidade": densidade
+                }
+
+
+
+        # Parte 3 - Redução e análise harmónica
+        reducao = stream.Score()
+        for i in indices:
+            reducao.append(self.score.parts[i])
+
+        tonalidade_reducao = reducao.analyze('key')
+
+        relatorio_acordes = []
+        for m in reducao.parts[0].getElementsByClass('Measure'):
+            acordes = m.chordify()
+            compasso_info = []
+            last_chord = None
+
+            for c in acordes.flatten().getElementsByClass('Chord'):
+                if not c.isRest and (last_chord is None or c.forteClass != last_chord.forteClass):
+                    compasso_info.append(c)
+                    last_chord = c
+
+            relatorio_acordes.append(compasso_info)
+
+        # Diálogo para guardar o relatório
+        
+
+        data_hora = datetime.datetime.now().strftime("%Y-%m-%d %H-%M")
+        nome_ficheiro_sugerido = f"Relatório - {titulo} - {data_hora}.txt"
+
+        file_path = filedialog.asksaveasfilename(defaultextension=".txt",
+                                                filetypes=[("Ficheiros de Texto", "*.txt")],
+                                                title="Guardar Relatório Como",
+                                                initialfile=nome_ficheiro_sugerido)
+        if not file_path:
+            messagebox.showwarning("Cancelado", "Exportação cancelada pelo utilizador.")
+            return
+        
+        titulo = obter_titulo_do_xml(self.ultimo_ficheiro)
+
+        with open(file_path, "w") as f:
+            f.write("=== RELATÓRIO DA PARTITURA ===\n\n")
+            f.write(f"Título: {titulo}\n\n")
+            f.write(">>> INFORMAÇÃO GERAL <<<\n")
+            f.write(f"Número total de instrumentos: {total_instrumentos}\n")
+            f.write("Instrumentos:\n")
+            for nome in nomes_instrumentos:
+                f.write(f"- {nome}\n")
+            f.write(f"\nTonalidade geral: {tonalidade_geral.tonic.name} {tonalidade_geral.mode}\n")
+            f.write(f"Número de compassos: {total_compassos}\n")
+            f.write("Assinatura(s) de compasso:\n")
+            for ts in time_signatures:
+                f.write(f"- {ts}\n")
+            f.write("\nNotas por instrumento:\n")
+            for instr, qtd in notas_por_instrumento.items():
+                f.write(f"- {instr}: {qtd} notas\n")
+
+            f.write("\n\n>>> ANÁLISE MELÓDICA <<<\n")
+            for instr, dados in analise_melodica.items():
+                f.write(f"\nInstrumento: {instr}\n")
+                if self.analisar_intervalos_var.get():
+                    f.write("Intervalos mais comuns:\n")
+                    for intv, count in dados["intervalos"].most_common():
+                        f.write(f"- {intv}: {count} vezes\n")
+                if self.analisar_direcao_var.get():
+                    f.write("Direção melódica:\n")
+                    f.write(f"- Ascendentes: {dados['ascendentes']}\n")
+                    f.write(f"- Descendentes: {dados['descendentes']}\n")
+                    f.write(f"- Direção média: {dados['direcao_media']:.2f}\n")
+                if self.analise_ritmica_var.get() and "ritmo" in dados:
+                    f.write("Ritmo:\n")
+                    for valor, qtd in dados["ritmo"]["valores"].most_common():
+                        f.write(f"- {valor}: {qtd} vezes\n")
+                    f.write(f"- Densidade média: {dados['ritmo']['densidade']:.2f} notas por compasso\n")
+                    f.write("\n\n>>> ANÁLISE RITMICA <<<\n")
+
+            f.write("\n\n>>> ANÁLISE DA REDUÇÃO HARMÓNICA <<<\n")
+            f.write("Instrumentos selecionados:\n")
+            for p in reducao.parts:
+                f.write(f"- {p.partName}\n")
+            f.write(f"\nTonalidade da redução: {tonalidade_reducao.tonic.name} {tonalidade_reducao.mode}\n")
+            f.write(f"Número de compassos na redução: {len(relatorio_acordes)}\n")
+            f.write("\nAcordes por compasso:\n")
+
+            for idx, acordes in enumerate(relatorio_acordes, start=1):
+                f.write(f"\nCompasso {idx}: ")
+                if not acordes:
+                    f.write("Sem acordes")
+                else:
+                    nomes_acordes = []
+                    for c in acordes:
+                        try:
+                            nomes_acordes.append(c.pitchedCommonName)
+                        except:
+                            nomes_acordes.append("Acorde desconhecido")
+                    f.write(", ".join(nomes_acordes))
+
+            f.write("\n\nFunções tonais por compasso:\n")
+
+            for idx, acordes in enumerate(relatorio_acordes, start=1):
+                f.write(f"\nCompasso {idx}: ")
+                if not acordes:
+                    f.write("Sem funções tonais")
+                else:
+                    funcoes = []
+                    for c in acordes:
+                        try:
+                            rn = roman.romanNumeralFromChord(c, tonalidade_reducao)
+                            funcoes.append(rn.figure)
+                        except:
+                            funcoes.append("Desconhecido")
+                    f.write(", ".join(funcoes))
+
+
+            f.write("\n\n>>> EXPLICAÇÃO DOS INTERVALOS <<<\n")
+            f.write("\nOs intervalos melódicos são representados por códigos compostos por uma letra e um número:\n\n")
+            f.write("P = Perfeito\nM = Maior\nm = Menor\n\n")
+            f.write("Exemplos:\n")
+            f.write("- P1 → Uníssono (mesma nota repetida)\n")
+            f.write("- m2 → Segunda menor ascendente\n")
+            f.write("- m-2 → Segunda menor descendente\n")
+            f.write("- M2 → Segunda maior ascendente\n")
+            f.write("- M-2 → Segunda maior descendente\n")
+            f.write("- m3 → Terça menor ascendente\n")
+            f.write("- m-3 → Terça menor descendente\n")
+            f.write("- P4 → Quarta justa ascendente\n")
+            f.write("- P-4 → Quarta justa descendente\n")
+            f.write("- P5 → Quinta justa ascendente\n")
+            f.write("- P-5 → Quinta justa descendente\n")
+            f.write("- m6 → Sexta menor ascendente\n")
+            f.write("- M6 → Sexta maior ascendente\n")
+            f.write("- m-7 → Sétima menor descendente\n")
+            f.write("- P8 → Oitava justa ascendente\n")
+            f.write("- P-8 → Oitava justa descendente\n\n")
+            f.write("A direção melódica indica o número de movimentos ascendentes e descendentes registados, bem como a tendência geral (direção média):\n")
+            f.write("- Valor positivo → tendência ascendente\n")
+            f.write("- Valor negativo → tendência descendente\n")
+            f.write("- Valor próximo de zero → sem tendência predominante\n")
+        
+
+
+        messagebox.showinfo("Concluído", f"Relatório gerado com sucesso em:\n{file_path}")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.geometry("600x450") 
+    app = PartituraApp(root)
+    root.mainloop()

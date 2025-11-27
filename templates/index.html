@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Score Analyzer - Modern Interface</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+        <!-- VexFlow for musical notation rendering -->
+        <!-- onload sets a flag and calls resolver if the frontend has exposed it -->
+        <script src="https://unpkg.com/vexflow@4.2.2/build/vexflow.js"
+                onload="(function(){ window.__vexflow_onload_happened = true; if(window._resolveVexFlowReady) { try { window._resolveVexFlowReady(); } catch(e){} } })()"
+                onerror="(function(){ window.__vexflow_onload_failed = true; if(window._rejectVexFlowReady) { try { window._rejectVexFlowReady(new Error('VexFlow failed to load')); } catch(e){} } })()">
+        </script>
+
+        <!-- Fallback loader: if the primary CDN fails or Vex isn't available, try other CDNs sequentially -->
+        <script>
+        (function(){
+            const cdnList = [
+                'https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/vexflow.min.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/vexflow/4.2.2/vexflow.min.js',
+                'https://unpkg.com/vexflow@4.2.2/build/vexflow.js'
+            ];
+            const tried = new Set();
+            let fallbackStarted = false;
+
+            function loadNext() {
+                if (typeof Vex !== 'undefined' && Vex && Vex.Flow) {
+                    console.log('VexFlow found via fallback CDN.');
+                    return;
+                }
+                const next = cdnList.find(u => !tried.has(u));
+                if (!next) {
+                    // All CDNs tried — reject if possible
+                    console.error('All fallback CDNs failed.');
+                    if (window._rejectVexFlowReady) {
+                        try { window._rejectVexFlowReady(new Error('All VexFlow CDNs failed to load')); } catch(e){}
+                    }
+                    return;
+                }
+                tried.add(next);
+                console.log('Trying VexFlow from:', next);
+                const s = document.createElement('script');
+                s.src = next;
+                s.async = true;
+                s.onload = function(){
+                    window.__vexflow_onload_happened = true;
+                    if(window._resolveVexFlowReady) {
+                        try { window._resolveVexFlowReady(); } catch(e){}
+                    }
+                };
+                s.onerror = function(){
+                    console.warn('CDN failed:', next);
+                    // try next CDN
+                    setTimeout(loadNext, 300);
+                };
+                document.head.appendChild(s);
+            }
+
+            // Wait longer to allow primary CDN a fair chance, then begin fallback
+            setTimeout(function(){
+                if (!(typeof Vex !== 'undefined' && Vex && Vex.Flow) && !fallbackStarted) {
+                    console.log('Primary CDN did not load VexFlow. Starting fallback sequence...');
+                    fallbackStarted = true;
+                    loadNext();
+                }
+            }, 2000);
+        })();
+        </script>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <button class="settings-btn" id="settings-btn" title="Advanced Options">⚙️</button>
+            <h1>MIAL - Musical Interactive Analysis Lab</h1>
+            <p>Harmonic and melodic analysis with tonal functions</p>
+        </header>
+
+        <main>
+            <section class="upload-section">
+                <div class="file-upload-wrapper">
+                    <input type="file" id="musicxml-file" accept=".xml,.musicxml" class="file-input">
+                    <label for="musicxml-file" class="file-label">
+                        <span class="file-icon">🎵</span>
+                        <span class="file-text">Select a MusicXML file</span>
+                        <span class="file-name" id="file-name">No file selected</span>
+                    </label>
+                </div>
+
+                <div class="score-info" id="score-info" style="display: none;">
+                    <h3>Score Information</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Title:</span>
+                            <span class="info-value" id="score-title">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Key:</span>
+                            <span class="info-value" id="score-key">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Measures:</span>
+                            <span class="info-value" id="score-measures">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Instruments:</span>
+                            <span class="info-value" id="score-instruments">-</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tabs Navigation -->
+            <nav class="tabs-navigation" id="tabs-navigation" style="display: none;">
+                <div class="tabs-container">
+                    <button class="tab-button active" data-tab="main">
+                        <span class="tab-icon">📊</span>
+                        <span class="tab-label">Main</span>
+                    </button>
+                    <button class="tab-button" data-tab="comparison">
+                        <span class="tab-icon">⚖️</span>
+                        <span class="tab-label">Comparison</span>
+                    </button>
+                    <button class="tab-button" data-tab="advanced">
+                        <span class="tab-icon">🔬</span>
+                        <span class="tab-label">Advanced Analysis</span>
+                    </button>
+                </div>
+            </nav>
+
+            <!-- Tab Content -->
+            <div class="tabs-content">
+                <!-- Main Tab -->
+                <div class="tab-pane active" id="tab-main">
+                    <section class="analysis-section" id="analysis-section" style="display: none;">
+                        <h2>Analysis Settings</h2>
+
+                        <div class="instrument-selection">
+                            <h3>Instruments for Harmonic Analysis</h3>
+                            <div class="instrument-list" id="instrument-list">
+                                <!-- Instrument checkboxes will be populated here -->
+                            </div>
+                        </div>
+
+                        <div class="analysis-options">
+                            <h3>Melodic Analysis Options</h3>
+                            <div class="options-grid">
+                                <label class="option-checkbox">
+                                    <input type="checkbox" id="analyze-intervals">
+                                    <span class="checkmark"></span>
+                                    Analyze Most Common Intervals
+                                </label>
+
+                                <label class="option-checkbox">
+                                    <input type="checkbox" id="analyze-direction">
+                                    <span class="checkmark"></span>
+                                    Analyze Predominant Melodic Direction
+                                </label>
+
+                                <label class="option-checkbox">
+                                    <input type="checkbox" id="analyze-rhythm">
+                                    <span class="checkmark"></span>
+                                    Analyze Rhythm (values and density)
+                                </label>
+                            </div>
+                        </div>
+
+                        <button class="generate-btn" id="generate-report">
+                            <span class="btn-icon">📊</span>
+                            Generate Analysis Report
+                        </button>
+                    </section>
+
+                    <section class="loading-section" id="loading-section" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>Analyzing score... This may take a few seconds</p>
+                    </section>
+
+                    <section class="result-section" id="result-section" style="display: none;">
+                        <h2>Generated Report</h2>
+                        <div class="result-content">
+                            <p>The report was generated successfully!</p>
+                            <div class="button-group">
+                                <button class="view-btn" id="view-report">
+                                    <span class="btn-icon">👁️</span>
+                                    View Report
+                                </button>
+                                <a href="#" class="download-btn" id="download-report">
+                                    <span class="btn-icon">📥</span>
+                                    Download Report
+                                </a>
+                                <button class="back-btn" id="back-to-options">
+                                    <span class="btn-icon">🔙</span>
+                                    Back to Options
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="report-view-section" id="report-view-section" style="display: none;">
+                        <div class="report-header">
+                            <h2>📊 Report View</h2>
+                            <button class="close-view-btn" id="close-report-view">✕</button>
+                        </div>
+                        <div class="report-content" id="report-content">
+                            <!-- Dynamic Content -->
+                            <!-- Report content will be dynamically inserted here -->
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Comparison Tab -->
+                <div class="tab-pane" id="tab-comparison">
+                    <section class="comparison-section" id="comparison-section">
+                        <h2>Instrument Comparison</h2>
+
+                        <!-- Instrument Selection -->
+                        <div class="comparison-controls">
+                            <div class="instrument-selector">
+                                <h3>Select up to 5 Instruments</h3>
+                                <div class="instrument-checkboxes" id="comparison-instruments">
+                                    <!-- Instrument checkboxes will be populated dynamically -->
+                                </div>
+                            </div>
+
+                            <!-- Legend and Controls -->
+                            <div class="comparison-legend-container" id="comparison-legend-container"
+                                style="display: none;">
+                                <div class="comparison-legend">
+                                    <h3>Instrument Legend</h3>
+                                    <div class="legend-items" id="comparison-legend-items">
+                                        <!-- Legend items will be populated dynamically -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Piano Roll Container -->
+                        <div class="comparison-piano-roll-wrapper" id="comparison-piano-roll-wrapper"
+                            style="display: none;">
+                            <div class="collapsible-box">
+                                <div class="collapsible-header">
+                                    <span class="header-title">📌 Comparative Piano Roll</span>
+                                    <button class="collapse-toggle">▼</button>
+                                </div>
+                                <div class="collapsible-body" style="display: block;">
+                                    <!-- Visualization Toggle -->
+                                    <div id="comparison-visualization-toggle" style="display: flex; gap: 10px; margin-bottom: 15px; padding: 10px; background: var(--bg-tertiary); border-radius: 8px; align-items: center;">
+                                        <span style="font-weight: 500;">Visualization:</span>
+                                        <button class="comp-viz-toggle-btn active" data-viz="piano-roll" style="padding: 8px 15px; border: none; border-radius: 6px; background: var(--accent-blue); color: white; cursor: pointer; font-weight: 500; transition: all 0.3s;">🎹 Piano Roll</button>
+                                        <button class="comp-viz-toggle-btn" data-viz="staff" style="padding: 8px 15px; border: none; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; font-weight: 500; border: 1px solid var(--border-color); transition: all 0.3s;">🎼 Staff Notation</button>
+                                    </div>
+
+                                    <div class="piano-roll-container">
+                                        <div id="comparison-piano-roll"></div>
+                                    </div>
+
+                                    <!-- Staff Notation Container for Comparison -->
+                                    <div id="comparison-piano-roll-staff" style="display: none; width: 100%; border: 1px solid var(--border-color); border-radius: 8px; overflow: auto; margin-top: 15px;"></div>
+
+                                    <!-- Measure Selection & AI Analysis Controls -->
+                                    <div class="comparison-controls-bar"
+                                        style="margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; justify-content: space-between;">
+                                        <div class="measure-selection-group"
+                                            style="display: flex; gap: 10px; align-items: center;">
+                                            <label>Measures:</label>
+                                            <input type="number" id="comp-start-measure" class="measure-input"
+                                                placeholder="Start" min="1"
+                                                style="width: 70px; padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                                            <span>to</span>
+                                            <input type="number" id="comp-end-measure" class="measure-input"
+                                                placeholder="End" min="1"
+                                                style="width: 70px; padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                                            <button id="comp-highlight-btn" class="secondary-btn"
+                                                style="padding: 8px 12px; font-size: 0.9rem;">👁️ Highlight</button>
+                                        </div>
+
+                                        <div class="ai-analysis-group">
+                                            <button id="comp-ai-analyze-btn" class="ai-analyze-btn"
+                                                style="background: linear-gradient(135deg, var(--accent-purple), #9c27b0);">
+                                                🤖 Analyze Selection with AI
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- AI Result Container for Comparison -->
+                                    <div id="comparison-ai-result-container" style="margin-top: 20px;"></div>
+
+                                    <!-- Chatbot Interface -->
+                                    <div class="chatbot-container"
+                                        style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
+                                        <div class="chatbot-header" style="margin-bottom: 15px;">
+                                            <h3>💬 Musical Assistant</h3>
+                                            <p style="font-size: 0.9rem; opacity: 0.7;">Ask questions about the analysis
+                                                or ask for clarification.</p>
+                                        </div>
+                                        <div id="chat-history" class="chat-history"
+                                            style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 15px; height: 300px; overflow-y: auto; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.05);">
+                                            <!-- Messages will appear here -->
+                                            <div class="chat-message system-message">
+                                                Hello! I am your musical assistant. How can I help you with the analysis
+                                                today?
+                                            </div>
+                                        </div>
+                                        <div class="chat-input-area" style="display: flex; gap: 10px;">
+                                            <input type="text" id="chat-input" placeholder="Type your question..."
+                                                style="flex: 1; padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                                            <button id="chat-send-btn" class="primary-btn"
+                                                style="padding: 10px 20px;">Send</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Empty State -->
+                        <div class="comparison-empty-state" id="comparison-empty-state">
+                            <p style="color: var(--text-secondary); text-align: center; padding: 40px 20px;">
+                                Select up to 5 instruments above to view the comparison
+                            </p>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Advanced Analysis Tab -->
+                <div class="tab-pane" id="tab-advanced">
+                    <section class="advanced-analysis-section" id="advanced-analysis-section">
+                        <h2>🔬 Advanced Musical Analysis</h2>
+
+                        <!-- Analysis Selection Horizontal Scroll -->
+                        <div class="advanced-analysis-scroll">
+                            <!-- Cadence Detection -->
+                            <div class="analysis-card" data-analysis="cadences">
+                                <div class="card-header">
+                                    <span class="card-icon">🔗</span>
+                                    <span class="card-title">Cadences</span>
+                                </div>
+                                <p class="card-desc">Authentic, plagal, deceptive</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('cadences')">Analyze</button>
+                            </div>
+
+                            <!-- Modulation Detection -->
+                            <div class="analysis-card" data-analysis="modulation">
+                                <div class="card-header">
+                                    <span class="card-icon">🔄</span>
+                                    <span class="card-title">Modulation</span>
+                                </div>
+                                <p class="card-desc">Key changes detection</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('modulation')">Analyze</button>
+                            </div>
+
+                            <!-- Voice Leading -->
+                            <div class="analysis-card" data-analysis="voice_leading">
+                                <div class="card-header">
+                                    <span class="card-icon">🎼</span>
+                                    <span class="card-title">Voice Leading</span>
+                                </div>
+                                <p class="card-desc">Leaps, stepwise motion</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('voice_leading')">Analyze</button>
+                            </div>
+
+                            <!-- Dissonance Analysis -->
+                            <div class="analysis-card" data-analysis="dissonance">
+                                <div class="card-header">
+                                    <span class="card-icon">⚡</span>
+                                    <span class="card-title">Dissonance</span>
+                                </div>
+                                <p class="card-desc">Consonance/dissonance patterns</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('dissonance')">Analyze</button>
+                            </div>
+
+                            <!-- Harmonic Functions -->
+                            <div class="analysis-card" data-analysis="harmonic_functions">
+                                <div class="card-header">
+                                    <span class="card-icon">Ⅰ</span>
+                                    <span class="card-title">Harmonic Depth</span>
+                                </div>
+                                <p class="card-desc">7ths, extensions, alterations</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('harmonic_functions')">Analyze</button>
+                            </div>
+
+                            <!-- Phrase Structure -->
+                            <div class="analysis-card" data-analysis="phrase_structure">
+                                <div class="card-header">
+                                    <span class="card-icon">📍</span>
+                                    <span class="card-title">Phrases</span>
+                                </div>
+                                <p class="card-desc">Phrase boundaries & structure</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('phrase_structure')">Analyze</button>
+                            </div>
+
+                            <!-- Texture Analysis -->
+                            <div class="analysis-card" data-analysis="texture_advanced">
+                                <div class="card-header">
+                                    <span class="card-icon">📊</span>
+                                    <span class="card-title">Texture</span>
+                                </div>
+                                <p class="card-desc">Density, sonority, rhythm</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('texture_advanced')">Analyze</button>
+                            </div>
+
+                            <!-- Chromatic Analysis -->
+                            <div class="analysis-card" data-analysis="chromatic_analysis">
+                                <div class="card-header">
+                                    <span class="card-icon">🎹</span>
+                                    <span class="card-title">Chromaticism</span>
+                                </div>
+                                <p class="card-desc">Accidentals, chromatic motion</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('chromatic_analysis')">Analyze</button>
+                            </div>
+
+                            <!-- Symmetry Analysis -->
+                            <div class="analysis-card" data-analysis="symmetry">
+                                <div class="card-header">
+                                    <span class="card-icon">↔️</span>
+                                    <span class="card-title">Symmetry</span>
+                                </div>
+                                <p class="card-desc">Retrograde, inversion</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('symmetry')">Analyze</button>
+                            </div>
+
+                            <!-- Statistics -->
+                            <div class="analysis-card" data-analysis="statistics">
+                                <div class="card-header">
+                                    <span class="card-icon">📈</span>
+                                    <span class="card-title">Statistics</span>
+                                </div>
+                                <p class="card-desc">Complete summary & metrics</p>
+                                <button class="card-btn" onclick="selectAdvancedAnalysis('statistics')">View</button>
+                            </div>
+                        </div>
+
+                        <!-- Result Container -->
+                        <div class="advanced-result-container" id="advanced-result-container" style="display: none;">
+                            <div class="result-header">
+                                <h3 id="result-title">Analysis Result</h3>
+                                <button class="close-result-btn" onclick="closeAdvancedResult()">✕</button>
+                            </div>
+                            <div class="result-body" id="result-body">
+                                <!-- Content will be dynamically loaded -->
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+            </div>
+        </main>
+
+        <!-- Advanced Options Modal -->
+        <div id="settings-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Advanced Options</h2>
+                    <span class="close-modal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="settings-section">
+                        <h3>🎨 Appearance</h3>
+                        <div class="form-group">
+                            <label>Theme:</label>
+                            <div class="theme-toggle-group" style="display: flex; gap: 20px;">
+                                <label class="option-checkbox" style="flex: 1; justify-content: center;">
+                                    <input type="radio" name="theme" value="dark" checked>
+                                    <span>🌙 Dark</span>
+                                </label>
+                                <label class="option-checkbox" style="flex: 1; justify-content: center;">
+                                    <input type="radio" name="theme" value="light">
+                                    <span>☀️ Light</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>🤖 AI Configuration</h3>
+                        <div class="api-group">
+                            <h4>Remote API (OpenAI Compatible)</h4>
+                            <div class="form-group">
+                                <label for="remote-api-url">Base URL:</label>
+                                <input type="text" id="remote-api-url" placeholder="https://api.openai.com/v1">
+                            </div>
+                            <div class="form-group">
+                                <label for="remote-api-key">API Key:</label>
+                                <input type="password" id="remote-api-key" placeholder="sk-...">
+                            </div>
+                            <div class="form-group">
+                                <label for="remote-model">Default Model:</label>
+                                <input type="text" id="remote-model" placeholder="gpt-3.5-turbo">
+                            </div>
+                        </div>
+
+                        <div class="api-group">
+                            <h4>Local API (OpenAI Compatible)</h4>
+                            <div class="form-group">
+                                <label for="local-api-url">Base URL:</label>
+                                <input type="text" id="local-api-url" placeholder="http://localhost:1234/v1">
+                            </div>
+                            <div class="form-group">
+                                <label for="local-api-key">API Key (Optional):</label>
+                                <input type="password" id="local-api-key" placeholder="lm-studio">
+                            </div>
+                            <div class="form-group">
+                                <label for="local-model">Default Model:</label>
+                                <input type="text" id="local-model" placeholder="local-model">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Default Agent:</label>
+                            <div class="theme-toggle-group" style="display: flex; gap: 20px;">
+                                <label class="option-checkbox" style="flex: 1; justify-content: center;">
+                                    <input type="radio" name="agent" value="remote" checked>
+                                    <span>🌐 Remote</span>
+                                </label>
+                                <label class="option-checkbox" style="flex: 1; justify-content: center;">
+                                    <input type="radio" name="agent" value="local">
+                                    <span>💻 Local</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Context Editor</h3>
+                        <p class="helper-text">Define context phrases for the AI model (one per line).</p>
+                        <textarea id="context-phrases" rows="6"
+                            placeholder="You are a music theory specialist..."></textarea>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>🎵 AI Analysis Prompts</h3>
+                        <p class="helper-text">Customize the base prompts used for different types of analysis. You can use placeholders like {instrumentName}, {totalNotes}, {timeSignature}, etc.</p>
+                        
+                        <div class="prompt-editor-group">
+                            <h4>Piano Roll Analysis</h4>
+                            <textarea id="prompt-piano-roll" rows="5"
+                                placeholder="# Piano Roll Analysis..."></textarea>
+                        </div>
+
+                        <div class="prompt-editor-group">
+                            <h4>Comparison Analysis</h4>
+                            <textarea id="prompt-comparison" rows="5"
+                                placeholder="You are a music analyst..."></textarea>
+                        </div>
+
+                        <div class="prompt-editor-group">
+                            <h4>Melodic Quick Analysis</h4>
+                            <textarea id="prompt-melodic-quick" rows="5"
+                                placeholder="Quick melodic context..."></textarea>
+                        </div>
+
+                        <div class="prompt-editor-group">
+                            <h4>General Panel Analysis</h4>
+                            <textarea id="prompt-general-panel" rows="5"
+                                placeholder="Based on the data above..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="save-settings" class="save-btn">Save Settings</button>
+                    <button id="cancel-settings" class="cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Analysis Result Modal -->
+        <div id="ai-analysis-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>🤖 AI Analysis</h2>
+                    <span class="close-modal" id="close-ai-modal">&times;</span>
+                </div>
+                <div class="modal-body" id="ai-analysis-content">
+                    <!-- AI analysis result will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>MIAL &copy; 2025 - GPL License</p>
+            <button id="about-btn" class="about-link-btn">About the Project</button>
+        </footer>
+    </div>
+
+    <!-- About Modal -->
+    <div id="about-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>About MIAL</h2>
+                <span class="close-modal" id="close-about-modal">&times;</span>
+            </div>
+            <div class="modal-body about-content">
+                <h3>Project Presentation: Musical Interactive Analysis Lab (MIAL)</h3>
+
+                <p><strong>I am Miguel Alves, a PhD student in Musical Studies in Coimbra, Portugal.</strong></p>
+
+                <p>I am conducting research in the field of musical theater, and I am increasingly looking for tools to
+                    aid in the analysis process. Here is a bit about the project.</p>
+
+                <h4>1. Executive Summary</h4>
+                <p>MIAL is a web platform, centralized on a server, designed to transform how music analysis is taught,
+                    learned, and researched. The project migrates music analysis from a static exercise, based on paper
+                    or complex code scripts, to a dynamic, visual, and interactive "laboratory" environment.</p>
+                <p>Users upload a score (MusicXML) and, instead of a text report, receive a "living" digital score where
+                    they can, in real-time, toggle complex analysis layers (harmonic, melodic, rhythmic, formal) on and
+                    off, all while listening to the piece and watching a synchronized cursor follow the music.</p>
+
+                <h4>2. The Problem (The Opportunity)</h4>
+                <p>Currently, academic music analysis faces two major challenges:</p>
+                <ul>
+                    <li><strong>The Manual Process:</strong> Traditional analysis is time-consuming, manual, and limited
+                        by the human capacity to detect complex patterns in large works.</li>
+                    <li><strong>The Technological Barrier:</strong> Powerful computational tools (like the
+                        <code>music21</code> library) exist, but their use requires advanced programming knowledge,
+                        making them inaccessible to the vast majority of students, musicians, and musicologists.</li>
+                </ul>
+                <p>MIAL serves as the perfect bridge between these two realities, offering the power of computational
+                    analysis through an intuitive graphical interface.</p>
+
+                <h4>3. The Objectives (What It Aims To Do)</h4>
+                <p>The main objective is to create an "analysis assistant" that allows the user to focus on interpreting
+                    the data rather than collecting it.</p>
+
+                <p><strong>Functional Objectives:</strong></p>
+                <ul>
+                    <li><strong>Visualize:</strong> Render MusicXML scores interactively in a web browser.</li>
+                    <li><strong>Synchronize:</strong> Offer audio playback of the score with a visual cursor following
+                        the notes in real-time.</li>
+                    <li><strong>Analyze (Backend):</strong> Exhaustively pre-process the score upon upload, using
+                        <code>music21</code> to extract all relevant analytical information (harmony, melody, rhythm,
+                        form, etc.).</li>
+                    <li><strong>Overlay (Frontend):</strong> Allow the user to "turn on" and "turn off" layers of
+                        analytical data over the score (e.g., "Show Roman Numerals", "Highlight Non-Chord Tones", "Show
+                        Formal Segmentation").</li>
+                    <li><strong>Inspect:</strong> Allow the user to click on any note or measure to get a detailed and
+                        instant report of that specific selection in an "Inspector" panel.</li>
+                    <li><strong>Export:</strong> Generate customizable text or PDF reports, where the user chooses which
+                        analyses to include.</li>
+                </ul>
+
+                <p><strong>Strategic Objectives:</strong></p>
+                <ul>
+                    <li><strong>Accessibility:</strong> Democratize access to computational musicology.</li>
+                    <li><strong>Centralization:</strong> Create a multi-user environment where a class or research group
+                        can share and discuss analyses.</li>
+                    <li><strong>Efficiency:</strong> Drastically reduce the time required to perform deep structural
+                        analyses.</li>
+                </ul>
+
+                <h4>4. Potential and Future Vision</h4>
+                <p>MIAL's potential goes far beyond a simple classroom tool.</p>
+                <ul>
+                    <li><strong>As a Pedagogical Tool:</strong> Teachers can use MIAL to visually demonstrate complex
+                        concepts (e.g., modulation, motivic development) in real-time, making music theory more
+                        tangible.</li>
+                    <li><strong>As a Research Assistant:</strong> Researchers can use the platform to perform "analysis
+                        at scale," rapidly comparing hundreds of works to identify stylistic traits of a composer or an
+                        era, based on objective and quantifiable data.</li>
+                    <li><strong>As a Platform (SaaS):</strong> The server and Docker-based architecture allows MIAL to
+                        be implemented as a service (Software as a Service) for universities and conservatories,
+                        becoming a standard tool in the music curriculum.</li>
+                </ul>
+
+                <p>In short, MIAL is not just a "score viewer" or a "report generator." It is an <strong>integrated
+                        analytical workspace</strong> that promises to redefine the interaction between the musician,
+                    the score, and the data hidden within it.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+
+</html>

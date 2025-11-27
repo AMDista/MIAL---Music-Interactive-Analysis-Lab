@@ -1,0 +1,49 @@
+{
+  "remote": {
+    "name": "OpenAI Compatible (Remote)",
+    "api_url": "https://api.openai.com/v1",
+    "api_key": "",
+    "default_model": "gpt-3.5-turbo",
+    "available_models": [
+      "gpt-3.5-turbo",
+      "gpt-4",
+      "gpt-4-turbo",
+      "gpt-4o",
+      "gpt-4o-mini"
+    ],
+    "enabled": true,
+    "description": "Uses remote OpenAI API or compatible endpoints (e.g., LM Proxy, Azure OpenAI)"
+  },
+  "local": {
+    "name": "Local LLM (LM Studio / LocalAI)",
+    "api_url": "http://localhost:1234/v1",
+    "api_key": "not-needed",
+    "default_model": "local-model",
+    "available_models": [
+      "local-model",
+      "mistral-7b",
+      "neural-chat",
+      "dolphin-2.1-mistral-7b"
+    ],
+    "enabled": false,
+    "description": "Uses LM Studio running locally or LocalAI. Ensure the service is running on the specified URL."
+  },
+  "context_phrases": [
+    "You are a specialist in music theory and harmonic analysis.",
+    "Analyze the provided score focusing on tonal functions and chord progressions.",
+    "Identify important cadences and modulations.",
+    "Provide insights on melodic and rhythmic structure."
+  ],
+  "analysis_settings": {
+    "temperature": 0.7,
+    "max_tokens": 2000,
+    "timeout_seconds": 30
+  },
+  "prompts": {
+    "piano_roll_analysis": "# Piano Roll Analysis: {instrumentName}\n\n## Statistical Data\n\n**General Information:**\n- Total notes: {totalNotes}\n- Range: {pitchRangeMin} to {pitchRangeMax} ({pitchRangeSemitones} semitones)\n- Total duration: {totalDuration} beats\n- Average duration per note: {avgDuration} beats\n\n**Most Common Melodic Intervals:**\n{topIntervals}\n\n**Identified Rhythmic Patterns:**\n{rhythmicPatterns}\n\n---\n\n## Analysis Task\n\nPlease provide a **complete and detailed** musical analysis, including:\n\n### 1. **Melodic Contour**\n- Describe the general direction (ascending, descending, undulating, static)\n- Identify climax points or important moments\n- Analyze the tessitura used\n\n### 2. **Interval Analysis**\n- Interpret the musical meaning of the most common intervals\n- Identify if there is a preference for steps or leaps\n- Comment on the expressive function\n\n### 3. **Rhythmic Characteristics**\n- Analyze the predominant rhythmic patterns\n- Identify rhythmic regularity or variation\n- Comment on the rhythmic character\n\n### 4. **Motifs and Repetitions**\n- Identify possible recurrent melodic motifs\n- Detect sequences or repetitive patterns\n- Analyze the suggested formal structure\n\n### 5. **Harmonic Context and Interpretation**\n- Suggest possible harmonic functions\n- Recommend interpretive approaches\n- Comment on the suggested musical style or period\n\n**Format:** Answer in **English**, using **Markdown** to structure the response.",
+    "comparison_analysis": "You are a music analyst, provide a structured thought on the following information:\n\nMeasures to analyze - Measure {startMeasure} to {endMeasure}\n\n{instrumentsData}\n\nPerform a detailed comparative analysis between the melodic lines of the selected instruments.\n\nFocus specifically on:\n1. **Melodic Relationship:** How do the melodies interact? Is there imitation, counterpoint, unison, or complementarity?\n2. **Instrumental Dialogue:** Identify questions and answers, or moments where one instrument takes the lead while the other accompanies.\n3. **Contrast and Similarity:** Compare the melodic contours, rhythms, and note density of each instrument in this excerpt.\n4. **Synthesis:** What is the resulting musical effect of this specific combination in this excerpt?",
+    "melodic_ai_quick": "Section: Melodic Analysis - {instrumentName}\n\nContext: Analyze this melodic line focusing on intervals, direction, density, and rhythmic patterns.\n\nProvide insights on the musical characteristics and interpretive suggestions.",
+    "general_ai_panel": "Based on the data above, answer the initial prompt. Do not repeat the raw data. Answer only with the analysis in English, without unnecessary introductions."
+  }
+}
+

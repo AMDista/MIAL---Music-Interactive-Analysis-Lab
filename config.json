@@ -1,0 +1,11 @@
+{
+    "remoteApiUrl": "",
+    "remoteApiKey": "",
+    "remoteModel": "",
+    "localApiUrl": "http://100.109.177.58:11434/v1",
+    "localApiKey": "",
+    "localModel": "gpt-oss:20b",
+    "contextPhrases": "Voc\u00ea \u00e9 um especialista em teoria musical e an\u00e1lise harm\u00f4nica.\nAnalise a partitura fornecida com foco em fun\u00e7\u00f5es tonais e progress\u00f5es de acordes.\nIdentifique cad\u00eancias importantes e modula\u00e7\u00f5es.\nForne\u00e7a insights sobre a estrutura mel\u00f3dica e r\u00edtmica.\nQue instrumento \u00e9 este?",
+    "theme": "dark",
+    "agent": "local"
+}

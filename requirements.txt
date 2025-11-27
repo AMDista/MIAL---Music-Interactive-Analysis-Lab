@@ -1,0 +1,4 @@
+Flask==3.0.0
+music21==9.7.0
+Werkzeug==3.0.1
+openai>=1.0.0
