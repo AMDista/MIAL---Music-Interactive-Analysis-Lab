@@ -5,77 +5,105 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Score Analyzer - Modern Interface</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='mial_icn.ico') }}">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-        <!-- VexFlow for musical notation rendering -->
-        <!-- onload sets a flag and calls resolver if the frontend has exposed it -->
-        <script src="https://unpkg.com/vexflow@4.2.2/build/vexflow.js"
-                onload="(function(){ window.__vexflow_onload_happened = true; if(window._resolveVexFlowReady) { try { window._resolveVexFlowReady(); } catch(e){} } })()"
-                onerror="(function(){ window.__vexflow_onload_failed = true; if(window._rejectVexFlowReady) { try { window._rejectVexFlowReady(new Error('VexFlow failed to load')); } catch(e){} } })()">
-        </script>
 
-        <!-- Fallback loader: if the primary CDN fails or Vex isn't available, try other CDNs sequentially -->
-        <script>
-        (function(){
-            const cdnList = [
-                'https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/vexflow.min.js',
-                'https://cdnjs.cloudflare.com/ajax/libs/vexflow/4.2.2/vexflow.min.js',
-                'https://unpkg.com/vexflow@4.2.2/build/vexflow.js'
-            ];
-            const tried = new Set();
-            let fallbackStarted = false;
+    <!-- Verovio Toolkit for professional music engraving (PRIMARY) -->
+    <!-- Local file (WASM-based, deterministic rendering from MusicXML) -->
+    <script src="{{ url_for('static', filename='verovio-toolkit.js') }}"></script>
+    <script>
+    // Initialize Verovio Toolkit
+    console.log('🎼 Initializing Verovio Toolkit...');
 
-            function loadNext() {
-                if (typeof Vex !== 'undefined' && Vex && Vex.Flow) {
-                    console.log('VexFlow found via fallback CDN.');
-                    return;
-                }
-                const next = cdnList.find(u => !tried.has(u));
-                if (!next) {
-                    // All CDNs tried — reject if possible
-                    console.error('All fallback CDNs failed.');
-                    if (window._rejectVexFlowReady) {
-                        try { window._rejectVexFlowReady(new Error('All VexFlow CDNs failed to load')); } catch(e){}
-                    }
-                    return;
-                }
-                tried.add(next);
-                console.log('Trying VexFlow from:', next);
-                const s = document.createElement('script');
-                s.src = next;
-                s.async = true;
-                s.onload = function(){
-                    window.__vexflow_onload_happened = true;
-                    if(window._resolveVexFlowReady) {
-                        try { window._resolveVexFlowReady(); } catch(e){}
-                    }
-                };
-                s.onerror = function(){
-                    console.warn('CDN failed:', next);
-                    // try next CDN
-                    setTimeout(loadNext, 300);
-                };
-                document.head.appendChild(s);
+    // Create global promise for Verovio initialization
+    window.verovioReady = new Promise((resolve, reject) => {
+        // Verovio needs to load its WASM module
+        verovio.module.onRuntimeInitialized = function() {
+            try {
+                window.vrvToolkit = new verovio.toolkit();
+                console.log('✅ Verovio Toolkit initialized successfully!');
+                console.log('📊 Verovio version:', window.vrvToolkit.getVersion());
+                resolve(window.vrvToolkit);
+            } catch (e) {
+                console.error('❌ Error initializing Verovio:', e);
+                reject(e);
+            }
+        };
+
+        // Timeout safety
+        setTimeout(() => {
+            if (!window.vrvToolkit) {
+                console.error('❌ Verovio initialization timed out');
+                reject(new Error('Verovio initialization timed out'));
+            }
+        }, 10000);
+    });
+    </script>
+
+    <!-- VexFlow for fallback (SECONDARY) -->
+    <!-- Local file with CDN fallbacks -->
+    <script>
+    (function loadVexFlow() {
+        console.log('🎵 Loading VexFlow as fallback...');
+
+        const sourceList = [
+            '{{ url_for("static", filename="vexflow.min.js") }}',  // PRIMARY: Local
+            'https://cdn.jsdelivr.net/npm/vexflow@4.2.5',           // Fallback 1
+            'https://unpkg.com/vexflow@4.2.5/build/vexflow.js'      // Fallback 2
+        ];
+
+        let currentIndex = 0;
+
+        function tryLoadSource() {
+            if (currentIndex >= sourceList.length) {
+                console.error('❌ All VexFlow sources failed');
+                window.vexflowLoaded = Promise.reject(new Error('All VexFlow sources failed'));
+                return;
             }
 
-            // Wait longer to allow primary CDN a fair chance, then begin fallback
-            setTimeout(function(){
-                if (!(typeof Vex !== 'undefined' && Vex && Vex.Flow) && !fallbackStarted) {
-                    console.log('Primary CDN did not load VexFlow. Starting fallback sequence...');
-                    fallbackStarted = true;
-                    loadNext();
+            const script = document.createElement('script');
+            script.src = sourceList[currentIndex];
+
+            script.onload = () => {
+                if (typeof Vex !== 'undefined') {
+                    console.log(`✅ VexFlow loaded from source ${currentIndex + 1}/${sourceList.length}`);
+                    window.vexflowLoaded = Promise.resolve();
+                } else {
+                    console.warn(`⚠️ Source ${currentIndex + 1} loaded but Vex not found`);
+                    currentIndex++;
+                    tryLoadSource();
                 }
-            }, 2000);
-        })();
-        </script>
+            };
+
+            script.onerror = () => {
+                console.warn(`⚠️ VexFlow source ${currentIndex + 1} failed, trying next...`);
+                currentIndex++;
+                tryLoadSource();
+            };
+
+            document.head.appendChild(script);
+        }
+
+        window.vexflowLoaded = new Promise((resolve, reject) => {
+            window.vexflowLoadedResolve = resolve;
+            window.vexflowLoadedReject = reject;
+        });
+
+        tryLoadSource();
+    })();
+    </script>
 </head>
 
 <body>
     <div class="container">
         <header>
             <button class="settings-btn" id="settings-btn" title="Advanced Options">⚙️</button>
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="{{ url_for('static', filename='mial_icn.png') }}" alt="MIAL Logo" style="max-width: 150px; height: auto;">
+            </div>
             <h1>MIAL - Musical Interactive Analysis Lab</h1>
             <p>Harmonic and melodic analysis with tonal functions</p>
         </header>
@@ -255,12 +283,51 @@
                                         <button class="comp-viz-toggle-btn" data-viz="staff" style="padding: 8px 15px; border: none; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; font-weight: 500; border: 1px solid var(--border-color); transition: all 0.3s;">🎼 Staff Notation</button>
                                     </div>
 
+                                    <!-- Combined Piano Roll / Staff Container -->
                                     <div class="piano-roll-container">
-                                        <div id="comparison-piano-roll"></div>
-                                    </div>
+                                        <!-- Piano Roll View -->
+                                        <div id="comparison-piano-roll" style="display: block;"></div>
 
-                                    <!-- Staff Notation Container for Comparison -->
-                                    <div id="comparison-piano-roll-staff" style="display: none; width: 100%; border: 1px solid var(--border-color); border-radius: 8px; overflow: auto; margin-top: 15px;"></div>
+                                        <!-- Staff Notation View -->
+                                        <div id="comparison-piano-roll-staff" style="display: none; width: 100%; border: 1px solid var(--border-color); border-radius: 8px;">
+                                            <!-- Staff Controls -->
+                                            <div class="staff-controls" style="padding: 15px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border-color); display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                                                <span style="font-weight: 500;">Staff Notation Controls:</span>
+                                                <div style="display: flex; gap: 8px; align-items: center;">
+                                                    <label>Measures:</label>
+                                                    <input type="number" id="comparison-staff-vstart" min="1" value="1"
+                                                        style="width: 60px; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                                                    <span>to</span>
+                                                    <input type="number" id="comparison-staff-vend" min="1" value="4"
+                                                        style="width: 60px; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+                                                </div>
+                                                <button id="comparison-staff-render-btn" class="secondary-btn"
+                                                    style="padding: 8px 16px; background: var(--accent-blue); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: all 0.3s;">
+                                                    🎼 Render Staff
+                                                </button>
+
+                                                <!-- Zoom Controls -->
+                                                <div style="display: flex; gap: 8px; align-items: center; margin-left: 15px; padding-left: 15px; border-left: 1px solid var(--border-color);">
+                                                    <label style="font-size: 0.9rem;">Zoom:</label>
+                                                    <button id="comparison-staff-zoom-out" style="padding: 4px 10px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-weight: bold;">−</button>
+                                                    <span id="comparison-staff-zoom-level" style="font-size: 0.9rem; min-width: 45px; text-align: center;">40%</span>
+                                                    <button id="comparison-staff-zoom-in" style="padding: 4px 10px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-weight: bold;">+</button>
+                                                    <button id="comparison-staff-zoom-reset" style="padding: 4px 10px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 0.85rem;">Reset</button>
+                                                </div>
+
+                                                <div style="flex: 1;"></div>
+                                                <div style="font-size: 0.85rem; opacity: 0.7;" id="comparison-staff-info">
+                                                    Select instruments and measures to render combined score
+                                                </div>
+                                            </div>
+                                            <!-- Verovio Rendering Area with Scrolling -->
+                                            <div id="comparison-verovio-output" style="padding: 20px; min-height: 300px; max-height: 800px; background: white; overflow: auto; position: relative; white-space: nowrap;">
+                                                <div style="text-align: center; color: #666; padding: 40px; display: inline-block; width: 100%;">
+                                                    Click "Render Staff" to display the combined score
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
 
                                     <!-- Measure Selection & AI Analysis Controls -->
                                     <div class="comparison-controls-bar"
@@ -420,7 +487,17 @@
                                     <span class="card-title">Symmetry</span>
                                 </div>
                                 <p class="card-desc">Retrograde, inversion</p>
-                                <button class="card-btn" onclick="selectAdvancedAnalysis('symmetry')">Analyze</button>
+                                <button class="card-btn" onclick="selectSymmetryAnalysis('symmetry')">Analyze</button>
+                            </div>
+
+                            <!-- Symmetry Analysis (Music21) -->
+                            <div class="analysis-card" data-analysis="symmetry_music21">
+                                <div class="card-header">
+                                    <span class="card-icon">🎼</span>
+                                    <span class="card-title">Symmetry (Music21)</span>
+                                </div>
+                                <p class="card-desc">Using music21 native methods</p>
+                                <button class="card-btn" onclick="selectSymmetryAnalysis('symmetry_music21')">Analyze</button>
                             </div>
 
                             <!-- Statistics -->
@@ -431,6 +508,23 @@
                                 </div>
                                 <p class="card-desc">Complete summary & metrics</p>
                                 <button class="card-btn" onclick="selectAdvancedAnalysis('statistics')">View</button>
+                            </div>
+                        </div>
+
+                        <!-- Symmetry Instruments Container -->
+                        <div class="symmetry-instruments-container" id="symmetry-instruments-container" style="display: none;">
+                            <div class="result-header">
+                                <h3 id="symmetry-title">Select Instrument for Symmetry Analysis</h3>
+                                <button class="close-result-btn" onclick="closeSymmetryInstruments()">✕</button>
+                            </div>
+                            <div class="instrument-selector-wrapper" style="padding: 20px; border-bottom: 1px solid var(--border-color);">
+                                <label for="symmetry-instrument-select" style="display: block; margin-bottom: 10px; color: var(--secondary-text);">Choose an instrument:</label>
+                                <select id="symmetry-instrument-select" class="instrument-select">
+                                    <option value="">-- Select an instrument --</option>
+                                </select>
+                            </div>
+                            <div class="symmetry-results" id="symmetry-results" style="display: none;">
+                                <!-- Single result will be loaded here -->
                             </div>
                         </div>
 
@@ -542,6 +636,12 @@
                         </div>
 
                         <div class="prompt-editor-group">
+                            <h4>Section Analysis</h4>
+                            <textarea id="prompt-section-analysis" rows="5"
+                                placeholder="# Section Analysis: {instrumentName}..."></textarea>
+                        </div>
+
+                        <div class="prompt-editor-group">
                             <h4>Comparison Analysis</h4>
                             <textarea id="prompt-comparison" rows="5"
                                 placeholder="You are a music analyst..."></textarea>
@@ -582,7 +682,7 @@
 
         <footer>
             <p>MIAL &copy; 2025 - GNU / GPL License</p>
-            <p>version 0.6</p>
+            <p>version 0.7</p>
             <button id="about-btn" class="about-link-btn">About the Project</button>
         </footer>
     </div>

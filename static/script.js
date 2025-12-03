@@ -166,6 +166,7 @@ function loadSettings() {
     
     // Load prompt textareas
     document.getElementById('prompt-piano-roll').value = pianoRollPrompt;
+    document.getElementById('prompt-section-analysis').value = aiPrompts.section_analysis || '';
     document.getElementById('prompt-comparison').value = comparisonPrompt;
     document.getElementById('prompt-melodic-quick').value = melodicQuickPrompt;
     document.getElementById('prompt-general-panel').value = generalPanelPrompt;
@@ -193,6 +194,7 @@ async function saveSettings() {
     // Capture AI prompts
     const aiPrompts = {
         piano_roll_analysis: document.getElementById('prompt-piano-roll').value,
+        section_analysis: document.getElementById('prompt-section-analysis').value,
         comparison_analysis: document.getElementById('prompt-comparison').value,
         melodic_ai_quick: document.getElementById('prompt-melodic-quick').value,
         general_ai_panel: document.getElementById('prompt-general-panel').value
@@ -469,7 +471,16 @@ function viewReport() {
                         pianoRollSlot.appendChild(title);
                         pianoRollSlot.appendChild(chartDiv);
 
-                        // Add simple AI Analysis Button that uses the existing AI panel
+                        // Container for AI Analysis Buttons
+                        const aiButtonsContainer = document.createElement('div');
+                        aiButtonsContainer.style.cssText = `
+                            display: flex;
+                            gap: 10px;
+                            margin-top: 15px;
+                            width: 100%;
+                        `;
+
+                        // Piano Roll Analysis Button
                         const aiQuickBtn = document.createElement('button');
                         aiQuickBtn.className = 'piano-roll-quick-ai-btn';
                         aiQuickBtn.innerHTML = '🤖 Analyze Piano Roll with AI';
@@ -481,9 +492,8 @@ function viewReport() {
                             border-radius: 8px;
                             cursor: pointer;
                             font-weight: 600;
-                            margin-top: 15px;
                             transition: all 0.3s;
-                            width: 100%;
+                            flex: 1;
                         `;
 
                         aiQuickBtn.addEventListener('mouseover', () => {
@@ -496,7 +506,35 @@ function viewReport() {
                             aiQuickBtn.style.boxShadow = 'none';
                         });
 
-                        pianoRollSlot.appendChild(aiQuickBtn);
+                        // Section Analysis Button
+                        const sectionBtn = document.createElement('button');
+                        sectionBtn.className = 'section-analysis-ai-btn';
+                        sectionBtn.innerHTML = '📊 Section Analysis';
+                        sectionBtn.style.cssText = `
+                            background: linear-gradient(135deg, var(--accent-blue), #1976d2);
+                            color: white;
+                            border: none;
+                            padding: 12px 24px;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-weight: 600;
+                            transition: all 0.3s;
+                            flex: 1;
+                        `;
+
+                        sectionBtn.addEventListener('mouseover', () => {
+                            sectionBtn.style.transform = 'translateY(-2px)';
+                            sectionBtn.style.boxShadow = '0 4px 12px rgba(25, 118, 210, 0.4)';
+                        });
+
+                        sectionBtn.addEventListener('mouseout', () => {
+                            sectionBtn.style.transform = 'translateY(0)';
+                            sectionBtn.style.boxShadow = 'none';
+                        });
+
+                        aiButtonsContainer.appendChild(aiQuickBtn);
+                        aiButtonsContainer.appendChild(sectionBtn);
+                        pianoRollSlot.appendChild(aiButtonsContainer);
                     } else {
                         console.error(`Piano Roll Slot NOT found for ${instrumentName}`);
                     }
@@ -509,8 +547,9 @@ function viewReport() {
                     if (instrumentPianoData && pianoRollSlot) {
                         console.log(`Setting up Piano Roll for ${instrumentName} with ${instrumentPianoData.notes.length} notes`);
 
-                        // Find the quick AI button we just created
+                        // Find the AI buttons we just created
                         const quickBtn = pianoRollSlot.querySelector('.piano-roll-quick-ai-btn');
+                        const sectionBtn = pianoRollSlot.querySelector('.section-analysis-ai-btn');
 
                         if (quickBtn) {
                             // Add click handler to populate AI panel with Piano Roll analysis prompt
@@ -546,6 +585,90 @@ function viewReport() {
                                 } catch (error) {
                                     console.error('AI Analysis Error:', error);
                                     updateAiBoxError(pianoRollSlot, 'Error in AI analysis: ' + error.message);
+                                }
+                            });
+                        }
+
+                        if (sectionBtn) {
+                            // Add click handler for Section Analysis
+                            sectionBtn.addEventListener('click', async () => {
+                                console.log('Section Analysis button clicked for', instrumentName);
+                                if (!instrumentPianoData || !instrumentPianoData.notes || instrumentPianoData.notes.length === 0) {
+                                    alert('Error: No note data for this instrument.');
+                                    return;
+                                }
+
+                                // Try to get measure range from staff notation controls if visible
+                                let startMeasure = 1;
+                                let endMeasure = null;
+                                const measureDurationBeats = analysisData.general_info.measure_duration_beats || 4;
+
+                                // Check if staff notation is visible and has measure controls
+                                const staffContainer = document.getElementById(`${chartContainerId}-staff`);
+                                if (staffContainer && staffContainer.style.display !== 'none') {
+                                    const startInput = document.getElementById(`${chartContainerId}-staff-vstart`);
+                                    const endInput = document.getElementById(`${chartContainerId}-staff-vend`);
+
+                                    if (startInput && endInput) {
+                                        startMeasure = parseInt(startInput.value) || 1;
+                                        endMeasure = parseInt(endInput.value) || null;
+                                    }
+                                }
+
+                                // If no specific range, analyze all measures
+                                if (!endMeasure) {
+                                    const totalDuration = instrumentPianoData.notes.reduce((max, n) => Math.max(max, n.start + n.duration), 0);
+                                    endMeasure = Math.ceil(totalDuration / measureDurationBeats);
+                                }
+
+                                // Filter notes for the selected measure range
+                                const startTime = (startMeasure - 1) * measureDurationBeats;
+                                const endTime = endMeasure * measureDurationBeats;
+                                const filteredNotes = instrumentPianoData.notes.filter(n =>
+                                    n.start >= startTime && n.start < endTime
+                                );
+
+                                // Create filtered instrument data
+                                const filteredInstrumentData = {
+                                    ...instrumentPianoData,
+                                    notes: filteredNotes
+                                };
+
+                                // Get section analysis prompt from config and replace placeholders
+                                let sectionPrompt = appConfig.aiPrompts?.section_analysis ||
+                                    `# Section Analysis: ${instrumentName}\n\n## Measures ${startMeasure} to ${endMeasure}\n\nAnalyze this musical section focusing on motifs, character, development, rhythmic features, and structural function.`;
+
+                                // Replace placeholders
+                                sectionPrompt = sectionPrompt
+                                    .replace(/{instrumentName}/g, instrumentName)
+                                    .replace(/{startMeasure}/g, startMeasure)
+                                    .replace(/{endMeasure}/g, endMeasure)
+                                    .replace(/{totalNotes}/g, filteredNotes.length)
+                                    .replace(/{measureDurationBeats}/g, measureDurationBeats);
+
+                                // Show loading box immediately
+                                createLoadingAiBox(pianoRollSlot, `${instrumentName} (Measures ${startMeasure}-${endMeasure})`);
+
+                                try {
+                                    const aiResponse = await fetch('/api/analyze_with_ai', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            piano_roll_data: [filteredInstrumentData],
+                                            prompt: sectionPrompt,
+                                            agent_type: appConfig.agent || 'remote'
+                                        })
+                                    });
+                                    if (!aiResponse.ok) throw new Error('Error obtaining Section Analysis');
+                                    const aiData = await aiResponse.json();
+                                    if (aiData.analysis_result) {
+                                        displayAiAnalysisResultInBox(aiData.analysis_result, pianoRollSlot, `${instrumentName} (Measures ${startMeasure}-${endMeasure})`);
+                                    } else {
+                                        updateAiBoxError(pianoRollSlot, 'AI response contains no results.');
+                                    }
+                                } catch (error) {
+                                    console.error('Section Analysis Error:', error);
+                                    updateAiBoxError(pianoRollSlot, 'Error in Section Analysis: ' + error.message);
                                 }
                             });
                         }
@@ -2208,6 +2331,79 @@ function quarterLengthToVexflowDuration(quarterLength) {
     return 'q'; // default to quarter note
 }
 
+/* ========================================
+   MEASURE GROUPING AND PAGINATION SYSTEM
+   ======================================== */
+
+/**
+ * Group notes by measure number based on their start time
+ * @param {Array} notes - Array of note objects with {pitch, start, duration, name}
+ * @param {number} beatsPerMeasure - Number of beats per measure (default 4)
+ * @returns {Array} Array of measure objects with {number, notes, startBeat, endBeat}
+ */
+function groupNotesByMeasure(notes, beatsPerMeasure = 4) {
+    if (!notes || notes.length === 0) {
+        return [];
+    }
+
+    const measures = [];
+    const measureMap = new Map();
+
+    // Group notes by their measure number
+    notes.forEach(note => {
+        const measureNumber = Math.floor(note.start / beatsPerMeasure) + 1;
+
+        if (!measureMap.has(measureNumber)) {
+            measureMap.set(measureNumber, {
+                number: measureNumber,
+                notes: [],
+                startBeat: (measureNumber - 1) * beatsPerMeasure,
+                endBeat: measureNumber * beatsPerMeasure
+            });
+        }
+
+        measureMap.get(measureNumber).notes.push(note);
+    });
+
+    // Convert map to sorted array
+    const sortedMeasures = Array.from(measureMap.values()).sort((a, b) => a.number - b.number);
+
+    console.log(`Grouped ${notes.length} notes into ${sortedMeasures.length} measures`);
+    return sortedMeasures;
+}
+
+/**
+ * Calculate the optimal clef for a set of notes based on their pitch range
+ * @param {Array} notes - Array of note objects
+ * @returns {string} 'treble', 'bass', or 'alto'
+ */
+function determineOptimalClef(notes) {
+    if (!notes || notes.length === 0) return 'treble';
+
+    const pitches = notes.map(n => n.pitch);
+    const avgPitch = pitches.reduce((sum, p) => sum + p, 0) / pitches.length;
+
+    // MIDI 60 = C4 (middle C)
+    if (avgPitch < 55) return 'bass';      // Below G3
+    if (avgPitch > 67) return 'treble';    // Above G4
+    return 'treble';                        // Default to treble for middle range
+}
+
+/**
+ * Global state for staff notation pagination
+ */
+const staffNotationState = {
+    currentPage: 1,
+    measuresPerPage: 4,
+    totalMeasures: 0,
+    allMeasures: [],
+    instrumentData: null,
+    containerId: null,
+    beatsPerMeasure: 4,
+    selectedRange: { start: 1, end: 4 },
+    highlightedRange: null
+};
+
 /**
  * Check if VexFlow is loaded
  */
@@ -2236,129 +2432,398 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
- * Render staff notation using Vexflow
- * containerId: HTML element ID where to render
- * instrumentData: object with name and notes array
- * measureDurationBeats: beats per measure (typically 4)
+ * Render staff notation using Vexflow with measure range support
+ * @param {string} containerId - HTML element ID where to render
+ * @param {object} instrumentData - object with name and notes array
+ * @param {number} measureDurationBeats - beats per measure (typically 4)
+ * @param {number} startMeasure - starting measure number (default 1)
+ * @param {number} endMeasure - ending measure number (default 4)
  */
-async function renderStaffNotation(containerId, instrumentData, measureDurationBeats = 4) {
+async function renderStaffNotation(containerId, instrumentData, measureDurationBeats = 4, startMeasure = 1, endMeasure = 4) {
     const container = document.getElementById(containerId);
     if (!container || !instrumentData || !instrumentData.notes) {
         console.error('Invalid container or instrument data for staff notation');
         return;
     }
-    console.log(`Rendering staff notation for ${instrumentData.name} with ${instrumentData.notes.length} notes`);
 
-    // Show loading state while waiting for VexFlow
-    container.innerHTML = `<div style="color: #666; padding: 20px; text-align: center;">
+    console.log(`Rendering staff notation for ${instrumentData.name}: measures ${startMeasure}-${endMeasure} (${instrumentData.notes.length} total notes)`);
+
+    // Show loading state
+    container.innerHTML = `<div style="color: var(--text-secondary); padding: 20px; text-align: center;">
         <div style="display: inline-block; margin-bottom: 10px;">
-            <div style="width: 30px; height: 30px; border: 3px solid #f0ad4e; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;" id="vex-loader"></div>
+            <div style="width: 30px; height: 30px; border: 3px solid var(--accent-blue); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
         </div>
-        <p style="margin: 10px 0;">Loading notation library...</p>
-    </div>
-    <style>
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>`;
+        <p style="margin: 10px 0;">Loading staff notation...</p>
+    </div>`;
 
-    // Wait for VexFlow to be ready (promise-based loader)
+    // Wait for VexFlow to be ready
     try {
         await vexFlowReady;
     } catch (err) {
         console.error('VexFlow did not become available:', err);
-        container.innerHTML = `<div style="color: #ff9800; padding: 20px; text-align: center; background: rgba(255,152,0,0.1); border-radius: 8px; border: 1px solid #ff9800;">
+        container.innerHTML = `<div style="color: var(--warning-orange); padding: 20px; text-align: center; background: rgba(255,152,0,0.1); border-radius: 8px; border: 1px solid var(--warning-orange);">
             <p style="font-weight: bold; margin: 0 0 10px 0;">⚠️ Staff Notation Unavailable</p>
             <p style="font-size: 0.9rem; margin: 0 0 8px 0;">The music notation library could not be loaded.</p>
-            <p style="font-size: 0.85rem; color: #666; margin: 0 0 10px 0;">Error: ${err.message || 'Unknown error'}</p>
-            <p style="font-size: 0.85rem; color: #666; margin: 0;">Try refreshing the page or check your network connection.</p>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0 0 10px 0;">Error: ${err.message || 'Unknown error'}</p>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0;">Try refreshing the page or check your network connection.</p>
         </div>`;
         return;
     }
 
     try {
-        // Clear container
+        // Group notes by measure
+        const allMeasures = groupNotesByMeasure(instrumentData.notes, measureDurationBeats);
+
+        if (allMeasures.length === 0) {
+            container.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">
+                <p>No notes to display</p>
+            </div>`;
+            return;
+        }
+
+        // Update global state
+        staffNotationState.allMeasures = allMeasures;
+        staffNotationState.totalMeasures = allMeasures.length;
+        staffNotationState.instrumentData = instrumentData;
+        staffNotationState.containerId = containerId;
+        staffNotationState.beatsPerMeasure = measureDurationBeats;
+        staffNotationState.selectedRange = { start: startMeasure, end: endMeasure };
+
+        // Filter measures in the requested range
+        const validEnd = Math.min(endMeasure, allMeasures.length);
+        const validStart = Math.max(1, Math.min(startMeasure, validEnd));
+        const selectedMeasures = allMeasures.filter(m => m.number >= validStart && m.number <= validEnd);
+
+        if (selectedMeasures.length === 0) {
+            container.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">
+                <p>No measures in selected range (${validStart}-${validEnd})</p>
+            </div>`;
+            return;
+        }
+
+        // Determine optimal clef
+        const allNotesInRange = selectedMeasures.flatMap(m => m.notes);
+        const clef = determineOptimalClef(allNotesInRange);
+
+        // Clear container and create wrapper
         container.innerHTML = '';
 
-        // Create canvas element
+        // Create controls panel
+        const controlsDiv = createStaffControls(containerId, allMeasures.length, validStart, validEnd, measureDurationBeats);
+        container.appendChild(controlsDiv);
+
+        // Create canvas wrapper
+        const canvasWrapper = document.createElement('div');
+        canvasWrapper.style.cssText = 'width: 100%; overflow-x: auto; background: var(--bg-tertiary); border-radius: 8px; padding: 20px; margin-top: 15px;';
+
+        // Calculate canvas dimensions
+        const measuresPerLine = Math.min(4, selectedMeasures.length);
+        const numLines = Math.ceil(selectedMeasures.length / measuresPerLine);
+        const canvasWidth = Math.max(1200, measuresPerLine * 300);
+        const canvasHeight = Math.max(400, numLines * 180 + 100);
+
+        // Create canvas
         const canvas = document.createElement('canvas');
-        canvas.id = `staff-${containerId}`;
-        canvas.width = 1000;
-        canvas.height = 300;
-        container.appendChild(canvas);
+        canvas.id = `staff-canvas-${containerId}`;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        canvasWrapper.appendChild(canvas);
+        container.appendChild(canvasWrapper);
 
         // Get Vexflow Renderer and Context
         const renderer = new Vex.Flow.Renderer(canvas, Vex.Flow.Renderer.Backends.CANVAS);
         const context = renderer.getContext();
+        context.setFont('Arial', 10);
 
-        // Set context properties
-        context.setFont('Arial', 12, 'normal');
+        // Render each measure
+        let xPosition = 10;
+        let yPosition = 40;
+        const staveWidth = 280;
+        const lineHeight = 180;
 
-        // Create stave (treble clef by default)
-        const stave = new Vex.Flow.Stave(10, 40, 950);
-        stave.addClef('treble').addTimeSignature(`${measureDurationBeats}/4`).addKeySignature('C');
-        stave.setContext(context).draw();
-
-        // Create voice for the stave
-        const voice = new Vex.Flow.Voice({ num_beats: measureDurationBeats, beat_value: 4 });
-
-        // Convert notes to Vexflow notes
-        const vexNotes = instrumentData.notes.map(note => {
+        selectedMeasures.forEach((measure, index) => {
             try {
-                const vexflowNote = midiToVexflowNote(note.pitch);
-                const duration = quarterLengthToVexflowDuration(note.duration);
-                
-                const vexNote = new Vex.Flow.StaveNote({
-                    keys: [vexflowNote],
-                    duration: duration,
-                    clef: 'treble'
-                });
-
-                // Add dot if it's a dotted note
-                if (note.duration > 1.5 && note.duration < 2) {
-                    vexNote.addModifier(new Vex.Flow.Dot(), 0);
+                // Move to next line if needed
+                if (index > 0 && index % measuresPerLine === 0) {
+                    xPosition = 10;
+                    yPosition += lineHeight;
                 }
 
-                return vexNote;
-            } catch (e) {
-                console.warn(`Could not create note for MIDI ${note.pitch}:`, e);
-                // Return a rest note instead
-                return new Vex.Flow.StaveNote({
-                    keys: ['b/4'],
-                    duration: 'q',
-                    clef: 'treble'
-                });
+                // Create stave for this measure
+                const stave = new Vex.Flow.Stave(xPosition, yPosition, staveWidth);
+
+                // Add clef, time signature, and key signature to first measure of each line
+                if (index % measuresPerLine === 0) {
+                    stave.addClef(clef);
+                    stave.addTimeSignature(`${measureDurationBeats}/4`);
+                }
+
+                // Add measure number above the stave
+                stave.setText(`${measure.number}`, Vex.Flow.Modifier.Position.ABOVE);
+
+                stave.setContext(context).draw();
+
+                // Convert notes to VexFlow format
+                if (measure.notes && measure.notes.length > 0) {
+                    const vexNotes = [];
+                    let currentBeat = 0;
+
+                    measure.notes.forEach(note => {
+                        try {
+                            const vexflowNote = midiToVexflowNote(note.pitch);
+                            const duration = quarterLengthToVexflowDuration(note.duration);
+
+                            const vexNote = new Vex.Flow.StaveNote({
+                                keys: [vexflowNote],
+                                duration: duration,
+                                clef: clef
+                            });
+
+                            // Add accidentals if needed
+                            if (vexflowNote.includes('#')) {
+                                vexNote.addModifier(new Vex.Flow.Accidental('#'), 0);
+                            } else if (vexflowNote.includes('b')) {
+                                vexNote.addModifier(new Vex.Flow.Accidental('b'), 0);
+                            }
+
+                            vexNotes.push(vexNote);
+                            currentBeat += note.duration;
+                        } catch (e) {
+                            console.warn(`Could not create note for MIDI ${note.pitch} in measure ${measure.number}:`, e);
+                        }
+                    });
+
+                    // Fill remaining beats with rests if needed
+                    while (currentBeat < measureDurationBeats && vexNotes.length < 8) {
+                        const remainingBeats = measureDurationBeats - currentBeat;
+                        const restDuration = remainingBeats >= 4 ? 'w' : (remainingBeats >= 2 ? 'h' : 'q');
+                        vexNotes.push(new Vex.Flow.StaveNote({
+                            keys: ['b/4'],
+                            duration: `${restDuration}r`,
+                            clef: clef
+                        }));
+                        currentBeat += (restDuration === 'w' ? 4 : (restDuration === 'h' ? 2 : 1));
+                    }
+
+                    if (vexNotes.length > 0) {
+                        // Create voice and add notes
+                        const voice = new Vex.Flow.Voice({
+                            num_beats: measureDurationBeats,
+                            beat_value: 4
+                        });
+                        voice.addTickables(vexNotes);
+
+                        // Format and draw
+                        new Vex.Flow.Formatter()
+                            .joinVoices([voice])
+                            .format([voice], staveWidth - 20);
+
+                        voice.draw(context, stave);
+                    }
+                }
+
+                xPosition += staveWidth + 10;
+
+            } catch (error) {
+                console.error(`Error rendering measure ${measure.number}:`, error);
             }
         });
 
-        // Only add the first few notes to avoid overflow
-        const notesToDisplay = vexNotes.slice(0, Math.min(8, vexNotes.length));
-        voice.addTickables(notesToDisplay);
-
-        // Format and draw
-        const formatter = new Vex.Flow.Formatter()
-            .joinVoices([voice])
-            .format([voice], 900);
-
-        voice.draw(context, stave);
-
-        // Draw additional information
-        context.font = '10px Arial';
-        context.fillStyle = '#666';
-        context.fillText(`Instrument: ${instrumentData.name}`, 10, 290);
-        context.fillText(`Notes shown: ${notesToDisplay.length} of ${instrumentData.notes.length}`, 10, 305);
-
-        renderer.render();
+        // Add info footer
+        context.font = '12px Arial';
+        context.fillStyle = 'var(--text-secondary)';
+        context.fillText(`${instrumentData.name} - Measures ${validStart}-${validEnd} of ${allMeasures.length}`, 15, canvasHeight - 20);
 
     } catch (error) {
         console.error('Error rendering staff notation:', error);
-        container.innerHTML = `<div style="color: #ff6b6b; padding: 20px; text-align: center;">
-            <p style="font-weight: bold; margin-bottom: 10px;">📋 Staff Notation</p>
-            <p style="font-size: 0.9rem;">Unable to render staff notation at this time.</p>
-            <p style="font-size: 0.85rem; color: #999; margin-top: 10px;">Error: ${error.message}</p>
-            <p style="font-size: 0.85rem; color: #999;">Try refreshing the page.</p>
+        container.innerHTML = `<div style="color: var(--error-red); padding: 20px; text-align: center; background: rgba(244,67,54,0.1); border-radius: 8px; border: 1px solid var(--error-red);">
+            <p style="font-weight: bold; margin-bottom: 10px;">📋 Staff Notation Error</p>
+            <p style="font-size: 0.9rem;">Unable to render staff notation.</p>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 10px;">Error: ${error.message}</p>
         </div>`;
     }
+}
+
+/**
+ * Create staff notation controls panel
+ * @param {string} containerId - Container element ID
+ * @param {number} totalMeasures - Total number of measures in the piece
+ * @param {number} currentStart - Current start measure
+ * @param {number} currentEnd - Current end measure
+ * @param {number} beatsPerMeasure - Beats per measure
+ * @returns {HTMLElement} Controls div
+ */
+function createStaffControls(containerId, totalMeasures, currentStart, currentEnd, beatsPerMeasure) {
+    const controlsDiv = document.createElement('div');
+    controlsDiv.className = 'staff-controls';
+    controlsDiv.style.cssText = `
+        display: flex;
+        gap: 15px;
+        padding: 15px;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        border: 1px solid var(--border-color);
+    `;
+
+    // Label
+    const label = document.createElement('span');
+    label.textContent = 'Measures:';
+    label.style.cssText = 'font-weight: 500; color: var(--text-primary);';
+    controlsDiv.appendChild(label);
+
+    // Start measure input
+    const startInput = document.createElement('input');
+    startInput.type = 'number';
+    startInput.id = `${containerId}-staff-start`;
+    startInput.min = 1;
+    startInput.max = totalMeasures;
+    startInput.value = currentStart;
+    startInput.style.cssText = `
+        width: 70px;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        font-size: 0.95rem;
+    `;
+    controlsDiv.appendChild(startInput);
+
+    // "to" text
+    const toText = document.createElement('span');
+    toText.textContent = 'to';
+    toText.style.cssText = 'color: var(--text-secondary);';
+    controlsDiv.appendChild(toText);
+
+    // End measure input
+    const endInput = document.createElement('input');
+    endInput.type = 'number';
+    endInput.id = `${containerId}-staff-end`;
+    endInput.min = 1;
+    endInput.max = totalMeasures;
+    endInput.value = currentEnd;
+    endInput.style.cssText = `
+        width: 70px;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        font-size: 0.95rem;
+    `;
+    controlsDiv.appendChild(endInput);
+
+    // Render button
+    const renderBtn = document.createElement('button');
+    renderBtn.textContent = '🔍 Render';
+    renderBtn.style.cssText = `
+        padding: 8px 16px;
+        border: none;
+        border-radius: 6px;
+        background: var(--accent-blue);
+        color: white;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+    `;
+    renderBtn.addEventListener('click', () => {
+        const start = parseInt(startInput.value);
+        const end = parseInt(endInput.value);
+        if (start > 0 && end > 0 && start <= end && end <= totalMeasures) {
+            renderStaffNotation(
+                containerId,
+                staffNotationState.instrumentData,
+                beatsPerMeasure,
+                start,
+                end
+            );
+        } else {
+            alert(`Please enter valid measure range (1-${totalMeasures})`);
+        }
+    });
+    renderBtn.addEventListener('mouseenter', () => {
+        renderBtn.style.transform = 'translateY(-2px)';
+        renderBtn.style.boxShadow = '0 4px 12px rgba(77, 158, 255, 0.4)';
+    });
+    renderBtn.addEventListener('mouseleave', () => {
+        renderBtn.style.transform = 'translateY(0)';
+        renderBtn.style.boxShadow = 'none';
+    });
+    controlsDiv.appendChild(renderBtn);
+
+    // Previous page button
+    const prevBtn = document.createElement('button');
+    prevBtn.innerHTML = '◀ Prev';
+    prevBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-primary);
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+    `;
+    prevBtn.addEventListener('click', () => {
+        const measuresPerPage = currentEnd - currentStart + 1;
+        const newEnd = Math.max(measuresPerPage, currentStart - 1);
+        const newStart = Math.max(1, newEnd - measuresPerPage + 1);
+        renderStaffNotation(
+            containerId,
+            staffNotationState.instrumentData,
+            beatsPerMeasure,
+            newStart,
+            newEnd
+        );
+    });
+    prevBtn.disabled = currentStart <= 1;
+    if (prevBtn.disabled) {
+        prevBtn.style.opacity = '0.5';
+        prevBtn.style.cursor = 'not-allowed';
+    }
+    controlsDiv.appendChild(prevBtn);
+
+    // Next page button
+    const nextBtn = document.createElement('button');
+    nextBtn.innerHTML = 'Next ▶';
+    nextBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-primary);
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+    `;
+    nextBtn.addEventListener('click', () => {
+        const measuresPerPage = currentEnd - currentStart + 1;
+        const newStart = Math.min(totalMeasures - measuresPerPage + 1, currentEnd + 1);
+        const newEnd = Math.min(totalMeasures, newStart + measuresPerPage - 1);
+        renderStaffNotation(
+            containerId,
+            staffNotationState.instrumentData,
+            beatsPerMeasure,
+            newStart,
+            newEnd
+        );
+    });
+    nextBtn.disabled = currentEnd >= totalMeasures;
+    if (nextBtn.disabled) {
+        nextBtn.style.opacity = '0.5';
+        nextBtn.style.cursor = 'not-allowed';
+    }
+    controlsDiv.appendChild(nextBtn);
+
+    // Info text
+    const infoText = document.createElement('span');
+    infoText.style.cssText = 'margin-left: auto; color: var(--text-secondary); font-size: 0.9rem;';
+    infoText.textContent = `Total: ${totalMeasures} measures`;
+    controlsDiv.appendChild(infoText);
+
+    return controlsDiv;
 }
 
 /**
@@ -2480,18 +2945,25 @@ function createVisualizationToggleButton(pianoRollSlot, chartContainerId, instru
                     pianoRollSlot.appendChild(staffDiv);
                 }
 
-                // Render staff notation and wait for completion
+                // Render staff notation with Verovio (professional quality)
                 try {
-                    await renderStaffNotation(`${chartContainerId}-staff`, instrumentData, measureDurationBeats);
+                    await renderStaffNotationVerovio(`${chartContainerId}-staff`, instrumentData, measureDurationBeats, 1, 4);
                     staffNotationRendered = true;
                 } catch (err) {
-                    console.error('Failed to render staff notation:', err);
-                    // Display friendly error in the staffDiv
-                    staffDiv.innerHTML = `<div style="color: #ff9800; padding: 20px; text-align: center; background: rgba(255,152,0,0.1); border-radius: 8px; border: 1px solid #ff9800;">
-                        <p style="font-weight: bold; margin: 0 0 10px 0;">⚠️ Staff Notation Unavailable</p>
-                        <p style="font-size: 0.9rem; margin: 0 0 8px 0;">The music notation library failed to load.</p>
-                        <p style="font-size: 0.85rem; color: #666; margin: 0;">Try refreshing the page or check your network.</p>
-                    </div>`;
+                    console.error('Failed to render staff notation with Verovio:', err);
+                    // Fallback to VexFlow
+                    console.log('Attempting fallback to VexFlow...');
+                    try {
+                        await renderStaffNotation(`${chartContainerId}-staff`, instrumentData, measureDurationBeats, 1, 4);
+                        staffNotationRendered = true;
+                    } catch (err2) {
+                        console.error('VexFlow fallback also failed:', err2);
+                        staffDiv.innerHTML = `<div style="color: #ff9800; padding: 20px; text-align: center; background: rgba(255,152,0,0.1); border-radius: 8px; border: 1px solid #ff9800;">
+                            <p style="font-weight: bold; margin: 0 0 10px 0;">⚠️ Staff Notation Unavailable</p>
+                            <p style="font-size: 0.9rem; margin: 0 0 8px 0;">Both Verovio and VexFlow failed to load.</p>
+                            <p style="font-size: 0.85rem; color: #666; margin: 0;">Error: ${err.message}</p>
+                        </div>`;
+                    }
                 }
             } else {
                 staffDiv.style.display = 'block';
@@ -2558,7 +3030,7 @@ function initializeComparisonVisualizationToggle() {
             if (vizType === 'piano-roll') {
                 pianoRollContainer.style.display = 'block';
                 if (staffContainer) staffContainer.style.display = 'none';
-                
+
                 // Refresh Plotly
                 if (window.comparisonPlotlyInstance) {
                     setTimeout(() => Plotly.Plots.resize('comparison-piano-roll'), 100);
@@ -2567,145 +3039,308 @@ function initializeComparisonVisualizationToggle() {
                 pianoRollContainer.style.display = 'none';
                 if (staffContainer) {
                     staffContainer.style.display = 'block';
-                    // Trigger async rendering and log errors
-                    renderComparisonStaffNotation().catch(err => console.error('Comparison staff render error:', err));
+                    // Don't auto-render - user must click "Render Staff" button
                 }
             }
         });
     });
+
+    // Initialize "Render Staff" button for comparison view
+    const renderBtn = document.getElementById('comparison-staff-render-btn');
+    if (renderBtn) {
+        renderBtn.addEventListener('click', () => {
+            console.log('🎼 Render Staff button clicked');
+            renderComparisonStaffWithVerovio().catch(err => {
+                console.error('❌ Error rendering comparison staff:', err);
+            });
+        });
+    }
 }
 
 /**
- * Render staff notation for comparison tab (all visible instruments)
+ * Render combined staff notation for comparison tab using Verovio
+ * This renders all selected instruments in a single vertically-aligned score
+ * (Kept for compatibility - actual rendering is done by renderComparisonStaffWithVerovio)
  */
 async function renderComparisonStaffNotation() {
-    const staffContainer = document.getElementById('comparison-piano-roll-staff');
-    if (!staffContainer || !comparisonState.currentData) return;
+    console.log('🎼 renderComparisonStaffNotation called');
 
-    // Show loading state while waiting for VexFlow
-    staffContainer.innerHTML = `<div style="color: #666; padding: 20px; text-align: center;">
-        <div style="display: inline-block; margin-bottom: 10px;">
-            <div style="width: 30px; height: 30px; border: 3px solid #f0ad4e; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;" id="vex-loader"></div>
-        </div>
-        <p style="margin: 10px 0;">Loading notation library...</p>
-    </div>
-    <style>
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>`;
+    // This function is now triggered by the "Render Staff" button
+    // The actual rendering logic is in renderComparisonStaffWithVerovio()
+    await renderComparisonStaffWithVerovio();
+}
 
-    // Wait for VexFlow to be ready
-    try {
-        await vexFlowReady;
-    } catch (err) {
-        console.error('VexFlow did not become available for comparison view:', err);
-        staffContainer.innerHTML = `<div style="color: #ff9800; padding: 20px; text-align: center; background: rgba(255,152,0,0.1); border-radius: 8px; border: 1px solid #ff9800;">
-            <p style="font-weight: bold; margin: 0 0 10px 0;">⚠️ Staff Notation Unavailable</p>
-            <p style="font-size: 0.9rem; margin: 0 0 8px 0;">The music notation library could not be loaded.</p>
-            <p style="font-size: 0.85rem; color: #666; margin: 0 0 10px 0;">Error: ${err.message || 'Unknown error'}</p>
-            <p style="font-size: 0.85rem; color: #666; margin: 0;">Try refreshing the page or check your network connection.</p>
+/**
+ * Render comparison staff notation using Verovio with combined MusicXML endpoint
+ */
+async function renderComparisonStaffWithVerovio() {
+    console.log('🎼 Starting Verovio-based comparison staff rendering');
+
+    const outputDiv = document.getElementById('comparison-verovio-output');
+    const infoDiv = document.getElementById('comparison-staff-info');
+
+    if (!outputDiv) {
+        console.error('Output div not found');
+        return;
+    }
+
+    // Check if we have instruments selected
+    if (!comparisonState.selectedInstruments || comparisonState.selectedInstruments.length === 0) {
+        outputDiv.innerHTML = `<div style="text-align: center; color: #999; padding: 40px;">
+            <p>⚠️ No instruments selected</p>
+            <p style="font-size: 0.9rem; margin-top: 10px;">Please select at least one instrument from the checkboxes above.</p>
         </div>`;
         return;
     }
 
-    staffContainer.innerHTML = '';
+    // Check if we have a file path
+    if (!comparisonState.currentData || !comparisonState.currentData.file_path) {
+        outputDiv.innerHTML = `<div style="text-align: center; color: #999; padding: 40px;">
+            <p>⚠️ No score loaded</p>
+            <p style="font-size: 0.9rem; margin-top: 10px;">Please upload a score first.</p>
+        </div>`;
+        return;
+    }
+
+    // Get measure range from inputs
+    const startInput = document.getElementById('comparison-staff-vstart');
+    const endInput = document.getElementById('comparison-staff-vend');
+    const startMeasure = startInput ? parseInt(startInput.value) || 1 : 1;
+    const endMeasure = endInput ? parseInt(endInput.value) || null : null;
+
+    // Show loading state
+    outputDiv.innerHTML = `<div style="text-align: center; padding: 40px;">
+        <div style="display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;"></div>
+        <p style="color: #666; font-size: 1.1rem;">Generating combined score...</p>
+        <p style="color: #999; font-size: 0.9rem; margin-top: 10px;">Instruments: ${comparisonState.selectedInstruments.map(i => i.name).join(', ')}</p>
+    </div>`;
+
+    if (infoDiv) {
+        infoDiv.textContent = 'Generating combined MusicXML...';
+    }
 
     try {
-        // Create a multi-staff notation showing all visible instruments
-        const canvas = document.createElement('canvas');
-        canvas.id = 'comparison-staff-canvas';
-        canvas.width = 1200;
-        canvas.height = 100 + (comparisonState.selectedInstruments.length * 150);
-        staffContainer.appendChild(canvas);
+        // Wait for Verovio to be ready
+        await window.verovioReady;
 
-        const renderer = new Vex.Flow.Renderer(canvas, Vex.Flow.Renderer.Backends.CANVAS);
-        const context = renderer.getContext();
-        context.setFont('Arial', 12, 'normal');
+        // Get instrument indices
+        const instrumentIndices = comparisonState.selectedInstruments.map(i => i.index);
 
-        let currentYPosition = 40;
-        const measureDurationBeats = comparisonState.currentData.measure_duration_beats || 4;
+        console.log('📤 Fetching combined MusicXML for instruments:', instrumentIndices);
+        console.log('📏 Measure range:', startMeasure, '-', endMeasure || 'end');
 
-        // Render staff for each selected instrument
-        comparisonState.selectedInstruments.forEach((instrObj, index) => {
-            const instrumentData = comparisonState.currentData.instruments.find(i => i.index === instrObj.index);
-            
-            if (!instrumentData || instrumentData.notes.length === 0) {
-                currentYPosition += 50;
-                return;
-            }
-
-            try {
-                // Create stave
-                const stave = new Vex.Flow.Stave(10, currentYPosition, 1150);
-                stave.setContext(context);
-
-                if (index === 0) {
-                    stave.addClef('treble').addTimeSignature(`${measureDurationBeats}/4`).addKeySignature('C');
-                } else {
-                    stave.addClef('treble');
-                }
-
-                stave.draw();
-
-                // Create voice
-                const voice = new Vex.Flow.Voice({ num_beats: measureDurationBeats, beat_value: 4 });
-
-                // Convert to Vexflow notes
-                const vexNotes = instrumentData.notes.slice(0, 8).map(note => {
-                    try {
-                        const vexflowNote = midiToVexflowNote(note.pitch);
-                        const duration = quarterLengthToVexflowDuration(note.duration);
-
-                        const vexNote = new Vex.Flow.StaveNote({
-                            keys: [vexflowNote],
-                            duration: duration,
-                            clef: 'treble'
-                        });
-
-                        return vexNote;
-                    } catch (e) {
-                        return new Vex.Flow.StaveNote({
-                            keys: ['b/4'],
-                            duration: 'q',
-                            clef: 'treble'
-                        });
-                    }
-                });
-
-                voice.addTickables(vexNotes);
-
-                // Format and draw
-                const formatter = new Vex.Flow.Formatter()
-                    .joinVoices([voice])
-                    .format([voice], 1100);
-
-                voice.draw(context, stave);
-
-                // Label
-                context.font = '10px Arial';
-                context.fillStyle = '#999';
-                context.fillText(`${instrObj.name} (showing first 8 notes)`, 10, currentYPosition + 80);
-
-                currentYPosition += 150;
-
-            } catch (e) {
-                console.warn(`Error rendering staff for ${instrObj.name}:`, e);
-                currentYPosition += 50;
-            }
+        // Fetch combined MusicXML from backend
+        const response = await fetch('/get_combined_musicxml', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                file_path: comparisonState.currentData.file_path,
+                instrument_indices: instrumentIndices,
+                start_measure: startMeasure,
+                end_measure: endMeasure
+            })
         });
 
-        renderer.render();
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        console.log('✅ Received combined MusicXML');
+        console.log('🎵 Instruments:', data.instrument_names.join(', '));
+
+        // Calculate ideal page width based on number of instruments and measures
+        // Estimate: ~200-250 pixels per measure per instrument
+        const estimatedWidth = Math.max(10000, (data.instrument_count || 1) * (data.measures || 30) * 250);
+
+        // Load MusicXML into Verovio with optimized options for continuous horizontal layout
+        window.vrvToolkit.setOptions({
+            scale: 40,
+            adjustPageHeight: false,
+            adjustPageWidth: false,  // Don't auto-adjust, use our calculated width
+            pageHeight: 3000,  // Very large height to prevent vertical breaks
+            pageWidth: estimatedWidth,  // Dynamically calculated width
+            pageMarginTop: 30,
+            pageMarginBottom: 30,
+            pageMarginLeft: 30,
+            pageMarginRight: 30,
+            svgViewBox: true,
+            breaks: 'none',    // DISABLE all automatic breaks
+            noFooter: true,    // Remove footer to save space
+            noHeader: true,    // Remove header to save space
+            foot: 'none',
+            header: 'none',
+            ignoreLayout: false
+        });
+
+        window.vrvToolkit.loadData(data.musicxml);
+
+        // Render SVG - use continuous rendering
+        let svg = window.vrvToolkit.renderToSVG(1);
+
+        // Parse SVG to add inline styles for proper scrolling
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svg, 'image/svg+xml');
+        const svgElement = svgDoc.querySelector('svg');
+        
+        if (svgElement) {
+            // Ensure SVG has display block and proper sizing
+            svgElement.style.display = 'block';
+            svgElement.style.marginBottom = '50px';
+            svgElement.setAttribute('data-original-width', svgElement.getAttribute('width') || 2000);
+            svgElement.setAttribute('data-original-height', svgElement.getAttribute('height') || 1000);
+            
+            // Serialize back to string
+            svg = new XMLSerializer().serializeToString(svgDoc);
+        }
+
+        // Display in output div
+        outputDiv.innerHTML = svg;
+
+        // Update info
+        if (infoDiv) {
+            infoDiv.innerHTML = `✅ Showing ${data.instrument_count} instrument(s) - Measures ${data.measures} (Width: ${estimatedWidth}px)`;
+        }
+
+        console.log('✅ Verovio rendering complete');
+        console.log(`📏 Estimated width: ${estimatedWidth}px`);
+
+        // Initialize zoom controls and scrolling
+        setTimeout(() => {
+            addComparisonStaffScrolling();
+            initComparisonStaffZoomControls();
+        }, 100);
 
     } catch (error) {
-        console.error('Error rendering comparison staff notation:', error);
-        staffContainer.innerHTML = `<div style="color: #ff6b6b; padding: 20px; text-align: center;">
-            <p style="font-weight: bold; margin-bottom: 10px;">📋 Staff Notation</p>
-            <p style="font-size: 0.9rem;">Unable to render staff notation at this time.</p>
-            <p style="font-size: 0.85rem; color: #999; margin-top: 10px;">Error: ${error.message}</p>
-            <p style="font-size: 0.85rem; color: #999;">Try refreshing the page.</p>
+        console.error('❌ Error rendering comparison staff:', error);
+        outputDiv.innerHTML = `<div style="text-align: center; color: #d32f2f; padding: 40px; background: #ffebee; border-radius: 8px; margin: 20px;">
+            <p style="font-size: 1.1rem; font-weight: bold; margin-bottom: 10px;">❌ Rendering Error</p>
+            <p style="font-size: 0.95rem;">${error.message}</p>
+            <p style="font-size: 0.85rem; color: #666; margin-top: 15px;">Please try selecting different instruments or measure ranges.</p>
         </div>`;
+
+        if (infoDiv) {
+            infoDiv.textContent = '❌ Error rendering score';
+        }
     }
+}
+
+/**
+ * Create staff controls for comparison view
+ */
+function createComparisonStaffControls(totalMeasures, currentStart, currentEnd, beatsPerMeasure) {
+    const controlsDiv = document.createElement('div');
+    controlsDiv.className = 'staff-controls';
+    controlsDiv.style.cssText = `
+        display: flex;
+        gap: 15px;
+        padding: 15px;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        border: 1px solid var(--border-color);
+    `;
+
+    const label = document.createElement('span');
+    label.textContent = 'Measures:';
+    label.style.cssText = 'font-weight: 500; color: var(--text-primary);';
+    controlsDiv.appendChild(label);
+
+    const startInput = document.createElement('input');
+    startInput.type = 'number';
+    startInput.id = 'comp-staff-start';
+    startInput.min = 1;
+    startInput.max = totalMeasures;
+    startInput.value = currentStart;
+    startInput.style.cssText = `
+        width: 70px; padding: 8px; border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    `;
+    controlsDiv.appendChild(startInput);
+
+    const toText = document.createElement('span');
+    toText.textContent = 'to';
+    toText.style.cssText = 'color: var(--text-secondary);';
+    controlsDiv.appendChild(toText);
+
+    const endInput = document.createElement('input');
+    endInput.type = 'number';
+    endInput.id = 'comp-staff-end';
+    endInput.min = 1;
+    endInput.max = totalMeasures;
+    endInput.value = currentEnd;
+    endInput.style.cssText = `
+        width: 70px; padding: 8px; border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    `;
+    controlsDiv.appendChild(endInput);
+
+    const renderBtn = document.createElement('button');
+    renderBtn.textContent = '🔍 Render';
+    renderBtn.style.cssText = `
+        padding: 8px 16px; border: none; border-radius: 6px;
+        background: var(--accent-blue); color: white;
+        cursor: pointer; font-weight: 500;
+    `;
+    renderBtn.addEventListener('click', () => {
+        const start = parseInt(startInput.value);
+        const end = parseInt(endInput.value);
+        if (start > 0 && end > 0 && start <= end && end <= totalMeasures) {
+            renderComparisonStaffNotation(start, end);
+        }
+    });
+    controlsDiv.appendChild(renderBtn);
+
+    const prevBtn = document.createElement('button');
+    prevBtn.innerHTML = '◀ Prev';
+    prevBtn.style.cssText = `
+        padding: 8px 16px; border: 1px solid var(--border-color);
+        border-radius: 6px; background: transparent;
+        color: var(--text-primary); cursor: pointer;
+    `;
+    prevBtn.addEventListener('click', () => {
+        const range = currentEnd - currentStart + 1;
+        const newEnd = Math.max(range, currentStart - 1);
+        const newStart = Math.max(1, newEnd - range + 1);
+        renderComparisonStaffNotation(newStart, newEnd);
+    });
+    prevBtn.disabled = currentStart <= 1;
+    if (prevBtn.disabled) prevBtn.style.opacity = '0.5';
+    controlsDiv.appendChild(prevBtn);
+
+    const nextBtn = document.createElement('button');
+    nextBtn.innerHTML = 'Next ▶';
+    nextBtn.style.cssText = `
+        padding: 8px 16px; border: 1px solid var(--border-color);
+        border-radius: 6px; background: transparent;
+        color: var(--text-primary); cursor: pointer;
+    `;
+    nextBtn.addEventListener('click', () => {
+        const range = currentEnd - currentStart + 1;
+        const newStart = Math.min(totalMeasures - range + 1, currentEnd + 1);
+        const newEnd = Math.min(totalMeasures, newStart + range - 1);
+        renderComparisonStaffNotation(newStart, newEnd);
+    });
+    nextBtn.disabled = currentEnd >= totalMeasures;
+    if (nextBtn.disabled) nextBtn.style.opacity = '0.5';
+    controlsDiv.appendChild(nextBtn);
+
+    const infoText = document.createElement('span');
+    infoText.style.cssText = 'margin-left: auto; color: var(--text-secondary); font-size: 0.9rem;';
+    infoText.textContent = `Total: ${totalMeasures} measures`;
+    controlsDiv.appendChild(infoText);
+
+    return controlsDiv;
 }
 
 // Initialize comparison visualization toggle when document is ready
@@ -2723,67 +3358,163 @@ if (typeof originalUpdateComparisonSelection === 'function') {
 }
 
 /* ========================================
-   VEXFLOW LOADER (Promise-based)
-   - Exposes resolver/rejector on `window` so HTML onload/onerror can call them.
-   - Robust: multiple calls to resolve only trigger once, long timeout for slow networks/CDNs.
+   VEROVIO RENDERING SYSTEM (Professional Music Engraving)
+   - Primary rendering engine using MusicXML -> SVG
+   - Superior typographic quality and deterministic output
    ======================================== */
-let _vexFlowResolveFunc = null;
-let _vexFlowRejectFunc = null;
-let _vexFlowPromiseResolved = false;
-let _vexFlowPromiseRejected = false;
 
-const vexFlowReady = new Promise((resolve, reject) => {
-    _vexFlowResolveFunc = function() {
-        if (_vexFlowPromiseResolved || _vexFlowPromiseRejected) return;
-        _vexFlowPromiseResolved = true;
-        console.log('✓ VexFlow resolved.');
-        resolve();
-    };
-    _vexFlowRejectFunc = function(err) {
-        if (_vexFlowPromiseResolved || _vexFlowPromiseRejected) return;
-        _vexFlowPromiseRejected = true;
-        console.error('✗ VexFlow rejected:', err?.message || err);
-        reject(err || new Error('VexFlow loading failed'));
-    };
-
-    // Expose on window for HTML script tag to call
-    window._resolveVexFlowReady = _vexFlowResolveFunc;
-    window._rejectVexFlowReady = _vexFlowRejectFunc;
-
-    const checkInterval = 100; // Check every 100ms
-    const softTimeout = 15000; // soft timeout — warn but don't reject
-    const hardTimeout = 30000; // hard timeout — finally reject
-    let elapsedTime = 0;
-
-    console.log('Starting to check for VexFlow...');
-
-    // If the page's VexFlow script already set an onload flag, try resolving immediately
-    if ((typeof window !== 'undefined' && window.__vexflow_onload_happened) || (typeof Vex !== 'undefined' && Vex && Vex.Flow)) {
-        console.log('VexFlow onload flag detected or Vex already present — resolving immediately.');
-        _vexFlowResolveFunc();
+/**
+ * Render staff notation using Verovio Toolkit
+ * @param {string} containerId - Container element ID
+ * @param {object} instrumentData - Instrument data with index, name, notes
+ * @param {number} measureDurationBeats - Beats per measure
+ * @param {number} startMeasure - Start measure
+ * @param {number} endMeasure - End measure
+ */
+async function renderStaffNotationVerovio(containerId, instrumentData, measureDurationBeats = 4, startMeasure = 1, endMeasure = 4) {
+    const container = document.getElementById(containerId);
+    if (!container || !instrumentData) {
+        console.error('Invalid container or instrument data');
         return;
     }
 
+    console.log(`🎼 [Verovio] Rendering ${instrumentData.name}: measures ${startMeasure}-${endMeasure}`);
+
+    container.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">
+        <div style="display: inline-block; margin-bottom: 10px;">
+            <div style="width: 30px; height: 30px; border: 3px solid var(--accent-purple); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        </div>
+        <p>Loading professional notation (Verovio)...</p>
+    </div>`;
+
+    try {
+        await window.verovioReady;
+
+        const response = await fetch('/get_instrument_musicxml', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                file_path: currentFilePath,
+                instrument_index: instrumentData.index,
+                start_measure: startMeasure,
+                end_measure: endMeasure
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+
+        container.innerHTML = '';
+
+        // Controls
+        const controls = document.createElement('div');
+        controls.style.cssText = 'display: flex; gap: 10px; padding: 15px; background: linear-gradient(135deg, rgba(187,134,252,0.1), rgba(77,158,255,0.1)); border-radius: 8px; align-items: center; border: 2px solid var(--accent-purple); margin-bottom: 15px;';
+        controls.innerHTML = `
+            <span style="background: var(--accent-purple); color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">✨ Verovio</span>
+            <span style="font-weight: 500;">Measures:</span>
+            <input type="number" id="${containerId}-vstart" value="${startMeasure}" min="1" style="width: 60px; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+            <span>to</span>
+            <input type="number" id="${containerId}-vend" value="${endMeasure}" min="1" style="width: 60px; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary);">
+            <button id="${containerId}-vrender" style="padding: 6px 12px; border: none; border-radius: 6px; background: linear-gradient(135deg, var(--accent-purple), #9c27b0); color: white; cursor: pointer; font-weight: 500;">🎼 Render</button>
+            <button id="${containerId}-vswitch" style="padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: transparent; color: var(--text-primary); cursor: pointer; margin-left: auto;">🔄 VexFlow</button>
+        `;
+        container.appendChild(controls);
+
+        document.getElementById(`${containerId}-vrender`).onclick = () => {
+            const s = parseInt(document.getElementById(`${containerId}-vstart`).value);
+            const e = parseInt(document.getElementById(`${containerId}-vend`).value);
+            renderStaffNotationVerovio(containerId, instrumentData, measureDurationBeats, s, e);
+        };
+        document.getElementById(`${containerId}-vswitch`).onclick = () => {
+            const s = parseInt(document.getElementById(`${containerId}-vstart`).value);
+            const e = parseInt(document.getElementById(`${containerId}-vend`).value);
+            renderStaffNotation(containerId, instrumentData, measureDurationBeats, s, e);
+        };
+
+        // SVG container
+        const svgDiv = document.createElement('div');
+        svgDiv.style.cssText = 'width: 100%; overflow-x: auto; background: var(--bg-tertiary); border-radius: 8px; padding: 20px; border: 1px solid var(--border-color);';
+        container.appendChild(svgDiv);
+
+        // Verovio rendering
+        window.vrvToolkit.setOptions({
+            scale: 40,
+            adjustPageHeight: true,
+            pageWidth: 2100,
+            breaks: 'auto'
+        });
+
+        const loaded = window.vrvToolkit.loadData(data.musicxml);
+        if (!loaded) throw new Error('Failed to parse MusicXML');
+
+        const svg = window.vrvToolkit.renderToSVG(1, {});
+        if (!svg) throw new Error('Failed to render SVG');
+
+        svgDiv.innerHTML = svg;
+
+        const footer = document.createElement('div');
+        footer.style.cssText = 'margin-top: 10px; text-align: center; font-size: 0.85rem; color: var(--text-secondary);';
+        footer.textContent = `${data.instrument_name} | Measures ${data.measures} | Verovio ${window.vrvToolkit.getVersion()}`;
+        container.appendChild(footer);
+
+        console.log('✅ Verovio render complete');
+
+    } catch (error) {
+        console.error('Verovio error:', error);
+        container.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--error-red); background: rgba(244,67,54,0.1); border-radius: 8px; border: 1px solid var(--error-red);">
+            <p style="font-weight: bold; margin-bottom: 10px;">Verovio Error</p>
+            <p style="font-size: 0.9rem;">${error.message}</p>
+            <button onclick="renderStaffNotation('${containerId}', ${JSON.stringify(instrumentData).replace(/"/g, '&quot;')}, ${measureDurationBeats}, ${startMeasure}, ${endMeasure})"
+                    style="margin-top: 15px; padding: 10px 20px; background: var(--accent-blue); color: white; border: none; border-radius: 6px; cursor: pointer;">
+                Try VexFlow
+            </button>
+        </div>`;
+    }
+}
+
+/* ========================================
+   VEXFLOW LOADER (Legacy fallback system)
+   - Kept for compatibility
+   ======================================== */
+
+// Use the promise created by the HTML loader, or create a fallback
+const vexFlowReady = window.verovioReady || window.__vexFlowPromise || new Promise((resolve, reject) => {
+    console.log('⚠️ VexFlow promise not found in window, creating fallback...');
+
+    // Expose resolvers on window for HTML script
+    window._resolveVexFlowReady = resolve;
+    window._rejectVexFlowReady = reject;
+
+    // Check if already loaded
+    if (typeof Vex !== 'undefined' && Vex && Vex.Flow && Vex.Flow.Renderer) {
+        console.log('✓ VexFlow already loaded at script.js initialization');
+        resolve();
+        return;
+    }
+
+    // Monitor for VexFlow availability
+    const checkInterval = 100;
+    const maxWait = 60000; // 60 seconds max
+    let elapsed = 0;
+
     const intervalId = setInterval(() => {
-        if (typeof Vex !== 'undefined' && Vex && Vex.Flow) {
+        if (typeof Vex !== 'undefined' && Vex && Vex.Flow && Vex.Flow.Renderer) {
             clearInterval(intervalId);
-            console.log(`✓ VexFlow loaded successfully after ${elapsedTime}ms.`);
-            _vexFlowResolveFunc();
+            console.log(`✓ VexFlow detected after ${elapsed}ms`);
+            resolve();
         } else {
-            elapsedTime += checkInterval;
-            if (elapsedTime >= softTimeout && elapsedTime - checkInterval < softTimeout && !_vexFlowPromiseRejected) {
-                console.warn(`⏱️ VexFlow taking longer than ${softTimeout / 1000}s. Fallback CDNs may still be loading...`);
-            }
-            if (elapsedTime >= hardTimeout) {
+            elapsed += checkInterval;
+            if (elapsed >= maxWait) {
                 clearInterval(intervalId);
-                console.error(`✗ VexFlow did not load within ${hardTimeout / 1000} seconds.`);
-                _vexFlowRejectFunc(new Error('VexFlow loading timed out after ' + (hardTimeout / 1000) + 's'));
+                console.error(`✗ VexFlow loading timed out after ${maxWait/1000}s`);
+                reject(new Error('VexFlow loading timed out'));
             }
         }
     }, checkInterval);
 });
 
-// Note: resolvers stay on window — fallback CDNs may call them later
+// Export for debugging
+window.vexFlowReady = vexFlowReady;
 
 /* ========================================
    ADVANCED ANALYSIS TAB
@@ -2837,6 +3568,7 @@ function renderAdvancedAnalysisResult(analysisType, data) {
         'texture_advanced': '📊 Texture Analysis',
         'chromatic_analysis': '🎹 Chromaticism',
         'symmetry': '↔️ Symmetry Analysis',
+        'symmetry_music21': '🎼 Symmetry (Music21)',
         'statistics': '📈 Statistics'
     };
 
@@ -2861,6 +3593,8 @@ function renderAdvancedAnalysisResult(analysisType, data) {
     } else if (analysisType === 'chromatic_analysis') {
         html = renderChromaticAdvanced(data);
     } else if (analysisType === 'symmetry') {
+        html = renderSymmetryAdvanced(data);
+    } else if (analysisType === 'symmetry_music21') {
         html = renderSymmetryAdvanced(data);
     } else if (analysisType === 'statistics') {
         html = renderStatisticsAdvanced(data);
@@ -3148,13 +3882,52 @@ function renderSymmetryAdvanced(data) {
         <p style="margin-bottom: 20px; color: #4d9eff;"><strong>${data.summary}</strong></p>
         <table class="statistics-table">
             <tr>
-                <td><strong>Retrograde Similarity:</strong></td>
+                <td><strong>Retrograde Similarity (R):</strong></td>
                 <td>${sym.retrograde_score}%</td>
-            </tr>
+            </tr>`;
+
+    if (sym.retrograde_measures && sym.retrograde_measures.length > 0) {
+        html += `
             <tr>
-                <td><strong>Inversion Similarity:</strong></td>
+                <td colspan="2" style="padding-left: 30px; font-size: 0.9em; color: #999;">
+                    Found in measures: ${sym.retrograde_measures.join(', ')}
+                </td>
+            </tr>`;
+    }
+
+    html += `
+            <tr>
+                <td><strong>Inversion Similarity (I):</strong></td>
                 <td>${sym.inversion_score}%</td>
-            </tr>
+            </tr>`;
+
+    if (sym.inversion_measures && sym.inversion_measures.length > 0) {
+        html += `
+            <tr>
+                <td colspan="2" style="padding-left: 30px; font-size: 0.9em; color: #999;">
+                    Found in measures: ${sym.inversion_measures.join(', ')}
+                </td>
+            </tr>`;
+    }
+
+    if (sym.retrograde_inversion_score !== undefined) {
+        html += `
+            <tr>
+                <td><strong>Retrograde-Inversion (RI):</strong></td>
+                <td>${sym.retrograde_inversion_score}%</td>
+            </tr>`;
+
+        if (sym.ri_measures && sym.ri_measures.length > 0) {
+            html += `
+            <tr>
+                <td colspan="2" style="padding-left: 30px; font-size: 0.9em; color: #999;">
+                    Found in measures: ${sym.ri_measures.join(', ')}
+                </td>
+            </tr>`;
+        }
+    }
+
+    html += `
         </table>
         <p style="margin-top: 15px; font-size: 0.9rem; color: #999;">
             Higher percentages indicate stronger symmetrical patterns in the pitch sequence.
@@ -3259,4 +4032,262 @@ function downloadFile(content, filename, type) {
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
+}
+
+
+async function selectSymmetryAnalysis(analysisType) {
+    if (!currentFilePath) {
+        alert('Please upload a file first');
+        return;
+    }
+
+    const container = document.getElementById('symmetry-instruments-container');
+    const title = document.getElementById('symmetry-title');
+    const select = document.getElementById('symmetry-instrument-select');
+    const resultsDiv = document.getElementById('symmetry-results');
+
+    console.log('selectSymmetryAnalysis called with type:', analysisType);
+    console.log('Select element found:', select);
+    console.log('Container element found:', container);
+
+    title.textContent = analysisType === 'symmetry_music21'
+        ? 'Select Instrument for Symmetry Analysis (Music21)'
+        : 'Select Instrument for Symmetry Analysis';
+
+    container.style.display = 'block';
+    select.innerHTML = '<option value="">Loading...</option>';
+    select.disabled = true;
+    resultsDiv.style.display = 'none';
+    resultsDiv.innerHTML = '';
+
+    window.currentSymmetryAnalysisType = analysisType;
+    console.log('currentSymmetryAnalysisType set to:', window.currentSymmetryAnalysisType);
+
+    try {
+        console.log('Fetching parts from /api/get-parts with file_path:', currentFilePath);
+        const response = await fetch('/api/get-parts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_path: currentFilePath })
+        });
+
+        console.log('Response status:', response.status);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+
+        console.log('Parts received:', data);
+
+        if (data.error) {
+            console.error('Error in response data:', data.error);
+            select.innerHTML = `<option value="">Error loading instruments</option>`;
+            return;
+        }
+
+        console.log('Calling populateInstrumentSelect with', data.parts.length, 'parts');
+        populateInstrumentSelect(data.parts);
+    } catch (error) {
+        console.error('Error loading instruments:', error);
+        console.error('Error details:', error.message, error.stack);
+        select.innerHTML = `<option value="">Error: ${error.message}</option>`;
+    }
+}
+
+function populateInstrumentSelect(parts) {
+    const select = document.getElementById('symmetry-instrument-select');
+
+    console.log('populateInstrumentSelect called');
+    console.log('Populating select with parts:', parts);
+    console.log('Parts count:', parts ? parts.length : 'null');
+
+    if (!parts || parts.length === 0) {
+        console.warn('No parts provided or empty array');
+        select.innerHTML = '<option value="">No instruments found</option>';
+        return;
+    }
+
+    let html = '<option value="">-- Select an instrument --</option>';
+    parts.forEach((part, index) => {
+        console.log(`Adding part ${index}:`, part.name, part.instrument, part.notes_count);
+        html += `<option value="${part.index}" data-name="${part.name}">${part.name} (${part.instrument}) - ${part.notes_count} notes</option>`;
+    });
+
+    console.log('Generated HTML options:', html.substring(0, 200) + '...');
+    select.innerHTML = html;
+    select.disabled = false;
+    console.log('Select populated and enabled');
+
+    select.onchange = function() {
+        console.log('Select changed, value:', this.value);
+        const selectedOption = this.options[this.selectedIndex];
+        console.log('Selected option:', selectedOption.text);
+        if (this.value !== '') {
+            const partIndex = parseInt(this.value);
+            const partName = selectedOption.dataset.name;
+            console.log('Analyzing part:', partIndex, partName);
+            analyzeSymmetryForInstrument(partIndex, partName);
+        } else {
+            console.log('No selection, clearing results');
+            const resultsDiv = document.getElementById('symmetry-results');
+            resultsDiv.style.display = 'none';
+            resultsDiv.innerHTML = '';
+        }
+    };
+}
+
+async function analyzeSymmetryForInstrument(partIndex, partName) {
+    const resultsDiv = document.getElementById('symmetry-results');
+    const analysisType = window.currentSymmetryAnalysisType || 'symmetry';
+
+    resultsDiv.style.display = 'block';
+    resultsDiv.innerHTML = `
+        <div class="spinner" style="margin: 20px auto;"></div>
+        <p style="text-align: center; color: #999;">Analyzing ${partName}...</p>
+    `;
+
+    try {
+        const response = await fetch('/api/advanced-analysis', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                file_path: currentFilePath,
+                analysis_type: analysisType,
+                part_index: partIndex
+            })
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+
+        displaySymmetryResult(partName, data);
+    } catch (error) {
+        console.error('Error in symmetry analysis:', error);
+        resultsDiv.innerHTML = `<div style="color: #ff6b6b; padding: 20px;">Error: ${error.message}</div>`;
+    }
+}
+
+function displaySymmetryResult(partName, data) {
+    const resultsDiv = document.getElementById('symmetry-results');
+    resultsDiv.innerHTML = `
+        <h4 style="color: var(--accent-blue); margin-bottom: 15px;">${partName}</h4>
+        ${renderSymmetryAdvanced(data)}
+    `;
+}
+
+function closeSymmetryInstruments() {
+    const container = document.getElementById('symmetry-instruments-container');
+    container.style.display = 'none';
+
+    const resultsDiv = document.getElementById('symmetry-results');
+    resultsDiv.innerHTML = '';
+    resultsDiv.style.display = 'none';
+
+    const select = document.getElementById('symmetry-instrument-select');
+    select.innerHTML = '<option value="">-- Select an instrument --</option>';
+    select.onchange = null;
+}
+
+/**
+ * Initialize zoom and scroll controls for comparison staff view
+ */
+function initComparisonStaffZoomControls() {
+    // Track zoom level - start at 40% but allow proper persistence
+    if (!window.comparisonStaffZoomLevel) {
+        window.comparisonStaffZoomLevel = 40;
+    }
+    
+    const outputDiv = document.getElementById('comparison-verovio-output');
+
+    // Zoom In Button
+    const zoomInBtn = document.getElementById('comparison-staff-zoom-in');
+    if (zoomInBtn) {
+        zoomInBtn.onclick = () => {
+            const newZoom = Math.min(200, Math.round((window.comparisonStaffZoomLevel + 10) / 10) * 10);
+            window.comparisonStaffZoomLevel = newZoom;
+            updateComparisonStaffZoom();
+        };
+    }
+
+    // Zoom Out Button
+    const zoomOutBtn = document.getElementById('comparison-staff-zoom-out');
+    if (zoomOutBtn) {
+        zoomOutBtn.onclick = () => {
+            const newZoom = Math.max(20, Math.round((window.comparisonStaffZoomLevel - 10) / 10) * 10);
+            window.comparisonStaffZoomLevel = newZoom;
+            updateComparisonStaffZoom();
+        };
+    }
+
+    // Zoom Reset Button
+    const zoomResetBtn = document.getElementById('comparison-staff-zoom-reset');
+    if (zoomResetBtn) {
+        zoomResetBtn.onclick = () => {
+            window.comparisonStaffZoomLevel = 40;
+            updateComparisonStaffZoom();
+        };
+    }
+
+    // Enable scrolling with proper dimensions
+    if (outputDiv) {
+        outputDiv.style.overflow = 'auto';
+        outputDiv.style.maxHeight = '800px';
+        outputDiv.style.minHeight = '400px';
+        // Add padding to ensure scroll works even if content width doesn't exceed container
+        outputDiv.style.paddingBottom = '100px';
+        outputDiv.style.paddingRight = '20px';
+    }
+}
+
+/**
+ * Update zoom level for comparison staff view
+ */
+function updateComparisonStaffZoom() {
+    const outputDiv = document.getElementById('comparison-verovio-output');
+    const zoomLevelDisplay = document.getElementById('comparison-staff-zoom-level');
+
+    if (outputDiv && window.comparisonStaffZoomLevel) {
+        // Scale all SVG content by changing width/height instead of transform
+        const svgs = outputDiv.querySelectorAll('svg');
+        svgs.forEach(svg => {
+            const scale = window.comparisonStaffZoomLevel / 100;
+            
+            // Get original dimensions
+            const originalWidth = svg.getAttribute('data-original-width') || svg.getBBox().width || 2000;
+            const originalHeight = svg.getAttribute('data-original-height') || svg.getBBox().height || 1000;
+            
+            // Store original dimensions if not already stored
+            if (!svg.getAttribute('data-original-width')) {
+                svg.setAttribute('data-original-width', originalWidth);
+                svg.setAttribute('data-original-height', originalHeight);
+            }
+            
+            // Apply zoom by changing actual dimensions (not transform)
+            svg.style.width = (originalWidth * scale) + 'px';
+            svg.style.height = (originalHeight * scale) + 'px';
+            svg.style.display = 'block';
+            svg.style.marginBottom = '50px';
+        });
+
+        // Update zoom level display
+        if (zoomLevelDisplay) {
+            zoomLevelDisplay.textContent = `${window.comparisonStaffZoomLevel}%`;
+        }
+
+        // Force reflow to recalculate scroll dimensions
+        setTimeout(() => {
+            outputDiv.scrollLeft = outputDiv.scrollLeft; // Trigger scroll recalculation
+        }, 50);
+
+        console.log(`🔍 Zoom level updated to ${window.comparisonStaffZoomLevel}%`);
+    }
+}
+
+/**
+ * Add scroll listeners to comparison staff view
+ */
+function addComparisonStaffScrolling() {
+    const outputDiv = document.getElementById('comparison-verovio-output');
+    if (outputDiv) {
+        // Already has overflow: auto from CSS
+        console.log('✅ Scrolling enabled for comparison staff view');
+    }
 }

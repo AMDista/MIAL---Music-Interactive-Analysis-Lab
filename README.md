@@ -18,6 +18,25 @@ A modern web application for MusicXML score analysis, combining traditional musi
     *   Identification of chords and tonal functions (Roman numerals).
 *   **Reports:** Detailed visualization in collapsible sections and export to TXT.
 
+### 🎼 Professional Staff Notation Display
+*   **Verovio Rendering:** Professional music engraving using Verovio Toolkit (WASM-based, deterministic MusicXML rendering)
+*   **Continuous Horizontal Layout:** Render unlimited measures without page breaks
+*   **Dynamic Zoom Controls:** Zoom from 20% to 200% with precise 10% increments
+*   **Full Scroll Support:** Horizontal and vertical scrolling for large scores
+*   **Responsive Rendering:** Adapts layout based on number of instruments and measures
+
+### ⚖️ Instrument Comparison (NEW in v0.7)
+*   **Multi-Instrument View:** Compare up to 5 instruments side-by-side
+*   **Dual Visualization Modes:**
+    *   **Piano Roll:** Visual timeline representation with all instruments aligned
+    *   **Staff Notation:** Professional score notation with vertical alignment
+*   **Interactive Controls:**
+    *   Measure range selection (start/end)
+    *   Zoom controls (20% to 200%)
+    *   Full scrolling support
+*   **AI Analysis Integration:** Analyze selected measure ranges with AI
+*   **Musical Assistant Chatbot:** Real-time questions and clarifications about comparative analysis
+
 ### 🤖 AI Integration
 *   **AI Panel:** Integrated into each report section for deep contextual analysis.
 *   **Model Flexibility:**
@@ -25,18 +44,20 @@ A modern web application for MusicXML score analysis, combining traditional musi
     *   **Local:** Compatible with LM Studio, LocalAI, and Ollama.
 *   **Customizable Prompts:** Prompt editor to save your favorite analysis instructions.
 *   **Automatic Context:** The prompt sent to the AI automatically includes the section title and analyzed data.
+*   **Comparison Analysis:** Dedicated prompts for comparative AI analysis
 
 ### 🎨 Modern Interface
 *   **Themes:** Toggle between **Dark Mode** (default, with blue and purple accents) and **Light Mode** (sober and concise).
 *   **Responsive Design:** Adaptable to desktops, tablets, and mobile devices.
 *   **Rich Visualization:** Real-time Markdown formatting in AI responses.
+*   **Tabbed Navigation:** Easy switching between Main, Comparison, and Advanced Analysis tabs
 
 ### ⚙️ Advanced Settings
 *   **Persistence:** API settings, models, and themes are saved on the server (`config.json`), keeping your preferences on any device.
 *   **Key Management:** Secure interface to configure URLs and API Keys.
 *   **AI Prompts Configuration:** Customize the base prompts used for different types of analysis:
     *   **Piano Roll Analysis:** Detailed melodic and statistical analysis prompts
-    *   **Comparison Analysis:** Cross-instrument comparative analysis prompts
+    *   **Comparison Analysis:** Cross-instrument comparative analysis prompts (NEW)
     *   **Melodic Quick Analysis:** Quick melodic context analysis
     *   **General Panel Analysis:** Finishing statement for general AI analysis
 *   **Placeholder Support:** Use dynamic placeholders like `{instrumentName}`, `{totalNotes}`, `{startMeasure}`, etc. to create flexible, reusable prompts.
@@ -156,6 +177,25 @@ Please analyze the following melodic characteristics:
 *   `templates/index.html`: HTML structure of the application.
 *   `static/style.css`: CSS styles with theme variables.
 *   `static/script.js`: Frontend logic, API calls, state management, and prompt loading/saving.
+*   `static/verovio-toolkit.js`: Professional music engraving library for staff notation rendering.
+
+## 📝 Version History
+
+### v0.7 (Latest)
+**Major Features:**
+- ✅ **Staff Notation Display:** Professional Verovio-based rendering with full zoom and scroll support
+- ✅ **Instrument Comparison Tab:** Compare up to 5 instruments with dual visualization modes (Piano Roll & Staff Notation)
+- ✅ **Dynamic Zoom Controls:** 20-200% zoom with precise 10% increments
+- ✅ **Continuous Horizontal Layout:** Unlimited measures without page breaks
+- ✅ **Full Scrolling:** Horizontal and vertical scroll support for large scores
+- ✅ **Musical Assistant Chatbot:** Integrated AI chat for comparison tab
+- ✅ **Comparison Analysis Prompts:** Dedicated AI prompt customization for comparative analysis
+
+### v0.6
+- First stable release with basic MusicXML analysis
+- AI integration with OpenAI and local models
+- Theme switching (Dark/Light mode)
+- Report generation and export
 
 ## 🤝 Contribution
 

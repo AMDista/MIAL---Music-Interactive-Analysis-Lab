@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, send_file, make_resp
 import os
 import json
 import tempfile
-from music21 import converter, stream, environment, chord, note, roman, meter, interval, analysis, key
+from music21 import converter, stream, environment, chord, note, roman, meter, interval, analysis, key, clef
 from collections import Counter
 import xml.etree.ElementTree as ET
 import datetime
@@ -490,17 +490,17 @@ def get_piano_roll_data():
             
         instruments_data = []
 
-        for part in score.parts:
+        for index, part in enumerate(score.parts):
             part_name = part.partName if part.partName else "Instrument"
             notes_data = []
 
             # Flatten the part to get all notes/chords in absolute time
             flat_part = part.flatten()
-            
+
             for element in flat_part.notes:
                 offset = float(element.offset)
                 duration = float(element.quarterLength)
-                
+
                 if element.isNote:
                     notes_data.append({
                         'pitch': element.pitch.midi,
@@ -520,11 +520,15 @@ def get_piano_roll_data():
                         })
 
             instruments_data.append({
+                'index': index,
                 'name': part_name,
                 'notes': notes_data
             })
 
-        return jsonify({'instruments': instruments_data})
+        return jsonify({
+            'instruments': instruments_data,
+            'file_path': file_path
+        })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -665,7 +669,8 @@ def get_comparison_data():
         
         return jsonify({
             'instruments': result_instruments,
-            'measure_duration_beats': measure_duration_beats
+            'measure_duration_beats': measure_duration_beats,
+            'file_path': file_path
         })
         
     except Exception as e:
@@ -739,6 +744,7 @@ def advanced_analysis():
         data = request.json
         file_path = data.get('file_path')
         analysis_type = data.get('analysis_type', '')
+        part_index = data.get('part_index', 0)
 
         if not file_path or not os.path.exists(file_path):
             return jsonify({'error': 'File not found'}), 400
@@ -763,7 +769,9 @@ def advanced_analysis():
         elif analysis_type == 'chromatic_analysis':
             result = analyze_chromatic_advanced(score)
         elif analysis_type == 'symmetry':
-            result = analyze_symmetry_advanced(score)
+            result = analyze_symmetry_advanced(score, part_index)
+        elif analysis_type == 'symmetry_music21':
+            result = analyze_symmetry_music21(score, part_index)
         elif analysis_type == 'statistics':
             result = analyze_complete_statistics(score)
         else:
@@ -775,6 +783,37 @@ def advanced_analysis():
         print(f"Advanced analysis error: {e}")
         import traceback
         traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/get-parts', methods=['POST'])
+def get_parts():
+    """Get list of parts/instruments from the score"""
+    try:
+        data = request.json
+        file_path = data.get('file_path')
+
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 400
+
+        score = converter.parse(file_path)
+        parts_info = []
+
+        for idx, part in enumerate(score.parts):
+            part_name = part.partName or f"Part {idx + 1}"
+            instrument_name = part.getInstrument().instrumentName if part.getInstrument() else "Unknown"
+            notes_count = len([n for n in part.recurse().notes if isinstance(n, note.Note)])
+
+            parts_info.append({
+                'index': idx,
+                'name': part_name,
+                'instrument': instrument_name,
+                'notes_count': notes_count
+            })
+
+        return jsonify({'parts': parts_info})
+
+    except Exception as e:
+        print(f"Get parts error: {e}")
         return jsonify({'error': str(e)}), 500
 
 def analyze_cadences_advanced(score):
@@ -1151,43 +1190,146 @@ def analyze_chromatic_advanced(score):
     except Exception as e:
         return {'error': f'Chromatic analysis failed: {str(e)}', 'chromaticism': {}}
 
-def analyze_symmetry_advanced(score):
+def analyze_symmetry_advanced(score, part_index=0):
     """Analyze musical symmetry patterns (retrograde, inversion)"""
     try:
         symmetry_data = {
             'retrograde_score': 0,
             'inversion_score': 0,
+            'retrograde_measures': [],
+            'inversion_measures': [],
             'mirror_sections': []
         }
 
         if not score.parts:
             return {'error': 'No parts found', 'symmetry': symmetry_data}
 
-        first_part = score.parts[0]
-        notes_list = [n for n in first_part.recurse().notes if isinstance(n, note.Note)]
+        if part_index >= len(score.parts):
+            return {'error': f'Part index {part_index} out of range', 'symmetry': symmetry_data}
+
+        target_part = score.parts[part_index]
+        part_name = target_part.partName or f"Part {part_index + 1}"
+        notes_list = [n for n in target_part.recurse().notes if isinstance(n, note.Note)]
 
         if len(notes_list) < 4:
-            return {'symmetry': symmetry_data, 'summary': 'Score too short for symmetry analysis'}
+            return {'symmetry': symmetry_data, 'summary': f'{part_name}: Too short for symmetry analysis'}
 
         # Get pitch sequence
         pitch_sequence = [n.pitch.pitchClass for n in notes_list]
 
         # Check retrograde similarity (reversed sequence)
         reversed_sequence = pitch_sequence[::-1]
-        retrograde_matches = sum(1 for i in range(len(pitch_sequence)) if pitch_sequence[i] == reversed_sequence[i])
+        retrograde_measures = []
+        retrograde_matches = 0
+        for i in range(len(pitch_sequence)):
+            if pitch_sequence[i] == reversed_sequence[i]:
+                retrograde_matches += 1
+                measure_num = notes_list[i].measureNumber
+                if measure_num and measure_num not in retrograde_measures:
+                    retrograde_measures.append(measure_num)
         symmetry_data['retrograde_score'] = round((retrograde_matches / len(pitch_sequence)) * 100, 2)
+        symmetry_data['retrograde_measures'] = sorted(retrograde_measures)
 
         # Check inversion similarity
         inverted_sequence = [(12 - p) % 12 for p in pitch_sequence]
-        inversion_matches = sum(1 for i in range(len(pitch_sequence)) if pitch_sequence[i] == inverted_sequence[i])
+        inversion_measures = []
+        inversion_matches = 0
+        for i in range(len(pitch_sequence)):
+            if pitch_sequence[i] == inverted_sequence[i]:
+                inversion_matches += 1
+                measure_num = notes_list[i].measureNumber
+                if measure_num and measure_num not in inversion_measures:
+                    inversion_measures.append(measure_num)
         symmetry_data['inversion_score'] = round((inversion_matches / len(pitch_sequence)) * 100, 2)
+        symmetry_data['inversion_measures'] = sorted(inversion_measures)
 
         return {
             'symmetry': symmetry_data,
-            'summary': f'Retrograde: {symmetry_data["retrograde_score"]}%, Inversion: {symmetry_data["inversion_score"]}%'
+            'part_name': part_name,
+            'summary': f'{part_name} - Retrograde: {symmetry_data["retrograde_score"]}%, Inversion: {symmetry_data["inversion_score"]}%'
         }
     except Exception as e:
         return {'error': f'Symmetry analysis failed: {str(e)}', 'symmetry': {}}
+
+def analyze_symmetry_music21(score, part_index=0):
+    """Analyze musical symmetry patterns using music21 native methods"""
+    try:
+        from music21 import serial
+
+        symmetry_data = {
+            'retrograde_score': 0,
+            'inversion_score': 0,
+            'retrograde_inversion_score': 0,
+            'retrograde_measures': [],
+            'inversion_measures': [],
+            'ri_measures': [],
+            'method': 'music21'
+        }
+
+        if not score.parts:
+            return {'error': 'No parts found', 'symmetry': symmetry_data}
+
+        if part_index >= len(score.parts):
+            return {'error': f'Part index {part_index} out of range', 'symmetry': symmetry_data}
+
+        target_part = score.parts[part_index]
+        part_name = target_part.partName or f"Part {part_index + 1}"
+        notes_list = [n for n in target_part.recurse().notes if isinstance(n, note.Note)]
+
+        if len(notes_list) < 4:
+            return {'symmetry': symmetry_data, 'part_name': part_name, 'summary': f'{part_name}: Too short for symmetry analysis'}
+
+        pitch_sequence = [n.pitch.pitchClass for n in notes_list]
+
+        row_length = min(12, len(pitch_sequence))
+        original_series = serial.pcToToneRow(pitch_sequence[:row_length])
+
+        retrograde_series = original_series.zeroCenteredTransformation('R', 0)
+        retrograde_pitches = retrograde_series.pitchClasses()
+        retrograde_measures = []
+        retrograde_matches = 0
+        for i in range(len(pitch_sequence)):
+            if pitch_sequence[i] == retrograde_pitches[i % len(retrograde_pitches)]:
+                retrograde_matches += 1
+                measure_num = notes_list[i].measureNumber
+                if measure_num and measure_num not in retrograde_measures:
+                    retrograde_measures.append(measure_num)
+        symmetry_data['retrograde_score'] = round((retrograde_matches / len(pitch_sequence)) * 100, 2)
+        symmetry_data['retrograde_measures'] = sorted(retrograde_measures)
+
+        inversion_series = original_series.zeroCenteredTransformation('I', 0)
+        inversion_pitches = inversion_series.pitchClasses()
+        inversion_measures = []
+        inversion_matches = 0
+        for i in range(len(pitch_sequence)):
+            if pitch_sequence[i] == inversion_pitches[i % len(inversion_pitches)]:
+                inversion_matches += 1
+                measure_num = notes_list[i].measureNumber
+                if measure_num and measure_num not in inversion_measures:
+                    inversion_measures.append(measure_num)
+        symmetry_data['inversion_score'] = round((inversion_matches / len(pitch_sequence)) * 100, 2)
+        symmetry_data['inversion_measures'] = sorted(inversion_measures)
+
+        retrograde_inversion_series = original_series.zeroCenteredTransformation('RI', 0)
+        ri_pitches = retrograde_inversion_series.pitchClasses()
+        ri_measures = []
+        ri_matches = 0
+        for i in range(len(pitch_sequence)):
+            if pitch_sequence[i] == ri_pitches[i % len(ri_pitches)]:
+                ri_matches += 1
+                measure_num = notes_list[i].measureNumber
+                if measure_num and measure_num not in ri_measures:
+                    ri_measures.append(measure_num)
+        symmetry_data['retrograde_inversion_score'] = round((ri_matches / len(pitch_sequence)) * 100, 2)
+        symmetry_data['ri_measures'] = sorted(ri_measures)
+
+        return {
+            'symmetry': symmetry_data,
+            'part_name': part_name,
+            'summary': f'{part_name} (Music21) - Retrograde: {symmetry_data["retrograde_score"]}%, Inversion: {symmetry_data["inversion_score"]}%, RI: {symmetry_data["retrograde_inversion_score"]}%'
+        }
+    except Exception as e:
+        return {'error': f'Music21 symmetry analysis failed: {str(e)}', 'symmetry': {}}
 
 def analyze_complete_statistics(score):
     """Complete statistical summary of the score"""
@@ -1231,6 +1373,178 @@ def analyze_complete_statistics(score):
         }
     except Exception as e:
         return {'error': f'Statistics analysis failed: {str(e)}', 'statistics': {}}
+
+
+@app.route('/get_instrument_musicxml', methods=['POST'])
+def get_instrument_musicxml():
+    """
+    Export MusicXML for a specific instrument from the loaded score.
+    Request body: {file_path: str, instrument_index: int, start_measure: int, end_measure: int}
+    Returns: MusicXML string
+    """
+    try:
+        data = request.get_json()
+        file_path = data.get('file_path')
+        instrument_index = data.get('instrument_index', 0)
+        start_measure = data.get('start_measure', 1)
+        end_measure = data.get('end_measure', None)
+
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({'error': 'Invalid file path'}), 400
+
+        # Load score
+        score = converter.parse(file_path)
+
+        # Get all parts
+        parts = score.parts
+        if instrument_index >= len(parts):
+            return jsonify({'error': f'Instrument index {instrument_index} out of range'}), 400
+
+        # Extract specific part
+        part = parts[instrument_index]
+
+        # Filter by measure range if specified
+        if end_measure:
+            # Create a new stream with only selected measures
+            new_part = stream.Part()
+            new_part.id = part.id
+            new_part.partName = part.partName
+
+            # Copy metadata
+            for elem in part.flatten():
+                if isinstance(elem, (clef.Clef, key.KeySignature, meter.TimeSignature)):
+                    new_part.insert(0, elem)
+                    break
+
+            # Extract measures in range
+            measures = part.getElementsByClass('Measure')
+            for m in measures:
+                if hasattr(m, 'number') and start_measure <= m.number <= end_measure:
+                    new_part.append(m)
+
+            part = new_part
+
+        # Export to MusicXML string
+        # Create temporary file, write MusicXML, read it back, then delete
+        temp_xml = tempfile.NamedTemporaryFile(mode='w', suffix='.musicxml', delete=False, encoding='utf-8')
+        temp_xml_path = temp_xml.name
+        temp_xml.close()
+
+        try:
+            part.write('musicxml', fp=temp_xml_path)
+            with open(temp_xml_path, 'r', encoding='utf-8') as f:
+                musicxml_string = f.read()
+            os.remove(temp_xml_path)
+        except Exception as e:
+            if os.path.exists(temp_xml_path):
+                os.remove(temp_xml_path)
+            raise e
+
+        return jsonify({
+            'musicxml': musicxml_string,
+            'instrument_name': part.partName or f'Instrument {instrument_index}',
+            'measures': f'{start_measure}-{end_measure or "end"}'
+        })
+
+    except Exception as e:
+        print(f"Error exporting MusicXML: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/get_combined_musicxml', methods=['POST'])
+def get_combined_musicxml():
+    """
+    Export combined MusicXML for multiple instruments from the loaded score.
+    Request body: {file_path: str, instrument_indices: [int], start_measure: int, end_measure: int}
+    Returns: Combined MusicXML string with all selected instruments
+    """
+    try:
+        data = request.get_json()
+        file_path = data.get('file_path')
+        instrument_indices = data.get('instrument_indices', [])
+        start_measure = data.get('start_measure', 1)
+        end_measure = data.get('end_measure', None)
+
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({'error': 'Invalid file path'}), 400
+
+        if not instrument_indices or len(instrument_indices) == 0:
+            return jsonify({'error': 'No instruments selected'}), 400
+
+        # Load score
+        score = converter.parse(file_path)
+
+        # Get all parts
+        all_parts = score.parts
+
+        # Validate instrument indices
+        for idx in instrument_indices:
+            if idx >= len(all_parts):
+                return jsonify({'error': f'Instrument index {idx} out of range'}), 400
+
+        # Create a new score with selected instruments
+        combined_score = stream.Score()
+
+        # Copy metadata from original score
+        for elem in score.flatten():
+            if isinstance(elem, (meter.TimeSignature, key.KeySignature)):
+                combined_score.insert(0, elem)
+                break
+
+        # Add each selected instrument
+        instrument_names = []
+        for idx in instrument_indices:
+            part = all_parts[idx]
+            instrument_names.append(part.partName or f'Instrument {idx}')
+
+            # Filter by measure range if specified
+            if end_measure:
+                # Create a new part with only selected measures
+                new_part = stream.Part()
+                new_part.id = part.id
+                new_part.partName = part.partName
+
+                # Copy clef, key signature, time signature
+                for elem in part.flatten():
+                    if isinstance(elem, (clef.Clef, key.KeySignature, meter.TimeSignature)):
+                        new_part.insert(0, elem)
+                        break
+
+                # Extract measures in range
+                measures = part.getElementsByClass('Measure')
+                for m in measures:
+                    if hasattr(m, 'number') and start_measure <= m.number <= end_measure:
+                        new_part.append(m)
+
+                combined_score.insert(0, new_part)
+            else:
+                combined_score.insert(0, part)
+
+        # Export to MusicXML string
+        temp_xml = tempfile.NamedTemporaryFile(mode='w', suffix='.musicxml', delete=False, encoding='utf-8')
+        temp_xml_path = temp_xml.name
+        temp_xml.close()
+
+        try:
+            combined_score.write('musicxml', fp=temp_xml_path)
+            with open(temp_xml_path, 'r', encoding='utf-8') as f:
+                musicxml_string = f.read()
+            os.remove(temp_xml_path)
+        except Exception as e:
+            if os.path.exists(temp_xml_path):
+                os.remove(temp_xml_path)
+            raise e
+
+        return jsonify({
+            'musicxml': musicxml_string,
+            'instrument_names': instrument_names,
+            'instrument_count': len(instrument_indices),
+            'measures': f'{start_measure}-{end_measure or "end"}'
+        })
+
+    except Exception as e:
+        print(f"Error exporting combined MusicXML: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
