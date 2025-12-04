@@ -737,14 +737,44 @@ def chat_with_ai():
         print(f"Chat Error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/detect-tonality', methods=['POST'])
+def detect_tonality():
+    """Detect the tonality of a score"""
+    try:
+        data = request.json
+        file_path = data.get('file_path')
+
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 400
+
+        score = converter.parse(file_path)
+        key_sig = score.analyze('key')
+
+        if key_sig:
+            return jsonify({
+                'tonality_detected': True,
+                'tonality': str(key_sig.tonic),
+                'mode': key_sig.mode,  # 'major' ou 'minor'
+                'tonic_pitch_class': key_sig.tonic.pitchClass
+            })
+        else:
+            return jsonify({
+                'tonality_detected': False,
+                'message': 'Nenhuma tonalidade clara detectada'
+            })
+    except Exception as e:
+        print(f"Tonality detection error: {e}")
+        return jsonify({'error': str(e)}), 400
+
 @app.route('/api/advanced-analysis', methods=['POST'])
 def advanced_analysis():
-    """Advanced musical analysis endpoint"""
+    """Advanced musical analysis endpoint with environment awareness"""
     try:
         data = request.json
         file_path = data.get('file_path')
         analysis_type = data.get('analysis_type', '')
         part_index = data.get('part_index', 0)
+        environment = data.get('environment', 'tonal')  # Default: tonal
 
         if not file_path or not os.path.exists(file_path):
             return jsonify({'error': 'File not found'}), 400
@@ -769,7 +799,11 @@ def advanced_analysis():
         elif analysis_type == 'chromatic_analysis':
             result = analyze_chromatic_advanced(score)
         elif analysis_type == 'symmetry':
-            result = analyze_symmetry_advanced(score, part_index)
+            # Use environment-aware analysis
+            if environment == 'serial':
+                result = analyze_symmetry_music21(score, part_index)
+            else:
+                result = analyze_symmetry_tonal(score, part_index)
         elif analysis_type == 'symmetry_music21':
             result = analyze_symmetry_music21(score, part_index)
         elif analysis_type == 'statistics':
@@ -1189,6 +1223,109 @@ def analyze_chromatic_advanced(score):
         }
     except Exception as e:
         return {'error': f'Chromatic analysis failed: {str(e)}', 'chromaticism': {}}
+
+def analyze_symmetry_tonal(score, part_index=0):
+    """
+    Analyze musical symmetry patterns in TONAL environment
+
+    In tonal music, inversions and transformations are calculated
+    with respect to the tonic (key center) of the piece.
+
+    Transformations:
+    - Retrograde: Reverse of pitch-class sequence
+    - Inversion: Mirror around the tonic pitch
+    - Retrograde-Inversion: Retrograde + Inversion
+    """
+    try:
+        # 1. OBTER TONALIDADE
+        key_sig = score.analyze('key')
+        if key_sig:
+            tonic_pc = key_sig.tonic.pitchClass
+            tonality_name = str(key_sig.tonic)
+            mode = key_sig.mode
+        else:
+            tonic_pc = 0  # Default: C
+            tonality_name = "C"
+            mode = "unknown"
+
+        # 2. VALIDAR PARTES
+        if not score.parts:
+            return {'error': 'No parts found', 'symmetry': {}}
+
+        if part_index >= len(score.parts):
+            return {'error': f'Part index {part_index} out of range', 'symmetry': {}}
+
+        # 3. EXTRAIR NOTAS
+        target_part = score.parts[part_index]
+        part_name = target_part.partName or f"Part {part_index + 1}"
+        notes_list = [n for n in target_part.recurse().notes if isinstance(n, note.Note)]
+
+        if len(notes_list) < 4:
+            return {
+                'symmetry': {
+                    'retrograde_score': 0,
+                    'inversion_score': 0,
+                    'retrograde_inversion_score': 0,
+                    'method': 'tonal',
+                    'tonality': tonality_name,
+                    'tonic_pitch_class': tonic_pc,
+                    'mode': mode
+                },
+                'part_name': part_name,
+                'summary': f'{part_name}: Too short for symmetry analysis'
+            }
+
+        pitch_sequence = [n.pitch.pitchClass for n in notes_list]
+
+        # 4. CÁLCULO DE RETROGRADO
+        # Fórmula: reversed_sequence
+        reversed_sequence = pitch_sequence[::-1]
+        retrograde_matches = sum(1 for i in range(len(pitch_sequence))
+                                if pitch_sequence[i] == reversed_sequence[i])
+        retrograde_score = (retrograde_matches / len(pitch_sequence)) * 100 if pitch_sequence else 0
+        retrograde_measures = [notes_list[i].measureNumber for i in range(len(pitch_sequence))
+                              if notes_list[i].measureNumber and
+                              pitch_sequence[i] == reversed_sequence[i]]
+
+        # 5. CÁLCULO DE INVERSÃO (COM EIXO NA TÓNICA)
+        # Fórmula: inverted = (2 * tonic - pitch) % 12
+        inverted_sequence = [(2 * tonic_pc - p) % 12 for p in pitch_sequence]
+        inversion_matches = sum(1 for i in range(len(pitch_sequence))
+                               if pitch_sequence[i] == inverted_sequence[i])
+        inversion_score = (inversion_matches / len(pitch_sequence)) * 100 if pitch_sequence else 0
+        inversion_measures = [notes_list[i].measureNumber for i in range(len(pitch_sequence))
+                             if notes_list[i].measureNumber and
+                             pitch_sequence[i] == inverted_sequence[i]]
+
+        # 6. CÁLCULO DE RETROGRADE-INVERSION
+        # Aplicar inversão primeiro, depois retrograde
+        ri_sequence = [(2 * tonic_pc - p) % 12 for p in pitch_sequence[::-1]]
+        ri_matches = sum(1 for i in range(len(pitch_sequence))
+                        if pitch_sequence[i] == ri_sequence[i])
+        ri_score = (ri_matches / len(pitch_sequence)) * 100 if pitch_sequence else 0
+        ri_measures = [notes_list[i].measureNumber for i in range(len(pitch_sequence))
+                      if notes_list[i].measureNumber and
+                      pitch_sequence[i] == ri_sequence[i]]
+
+        # 7. RETORNAR RESULTADO
+        return {
+            'symmetry': {
+                'retrograde_score': round(retrograde_score, 2),
+                'inversion_score': round(inversion_score, 2),
+                'retrograde_inversion_score': round(ri_score, 2),
+                'retrograde_measures': list(set(retrograde_measures)),
+                'inversion_measures': list(set(inversion_measures)),
+                'ri_measures': list(set(ri_measures)),
+                'method': 'tonal',
+                'tonality': tonality_name,
+                'tonic_pitch_class': tonic_pc,
+                'mode': mode
+            },
+            'part_name': part_name,
+            'summary': f'Análise Tonal em {tonality_name} {mode.capitalize()}: R={retrograde_score:.1f}%, I={inversion_score:.1f}%, RI={ri_score:.1f}%'
+        }
+    except Exception as e:
+        return {'error': f'Tonal symmetry analysis failed: {str(e)}', 'symmetry': {}}
 
 def analyze_symmetry_advanced(score, part_index=0):
     """Analyze musical symmetry patterns (retrograde, inversion)"""

@@ -239,6 +239,41 @@
                             <!-- Report content will be dynamically inserted here -->
                         </div>
                     </section>
+
+                    <!-- Analysis Environment Selection (Global) -->
+                    <section class="environment-selection-section" id="environment-selection-section" style="display: none; margin-top: 20px; padding: 20px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <h3 style="margin-bottom: 15px; color: var(--accent-blue); font-size: 1.1em;">🎼 Analysis Environment</h3>
+
+                        <div id="tonality-info" style="margin-bottom: 15px; padding: 12px; background: var(--bg-secondary); border-radius: 6px; border-left: 3px solid var(--accent-blue); display: none;">
+                            <div style="font-size: 0.95em;">
+                                <span style="color: var(--accent-blue); font-weight: 600;">🎵 Tonalidade detectada: </span>
+                                <span id="detected-tonality" style="font-weight: 600; color: var(--text-color);"></span>
+                            </div>
+                        </div>
+
+                        <div style="background: var(--bg-primary); padding: 15px; border-radius: 6px;">
+                            <label for="serialAnalysis" style="display: flex; align-items: center; cursor: pointer; user-select: none; margin-bottom: 10px;">
+                                <input type="checkbox" id="serialAnalysis" name="serialAnalysis" style="margin-right: 10px; cursor: pointer; width: 18px; height: 18px;">
+                                <span style="color: var(--text-color); font-weight: 500;">Análise em Ambiente Serial (12-tone/Dodecafónico)</span>
+                            </label>
+
+                            <div style="margin-top: 12px; padding: 10px; background: var(--bg-secondary); border-radius: 4px;">
+                                <div style="font-size: 0.9em; color: var(--secondary-text); margin-bottom: 5px;">
+                                    <strong>Modo atual:</strong> <span id="environment-badge" style="color: var(--accent-blue); font-weight: 600;">🎼 Tonal</span>
+                                </div>
+                                <div style="font-size: 0.85em; color: var(--secondary-text); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-color);">
+                                    <div id="mode-description-tonal" style="display: block;">
+                                        ✓ Análise tonal: inversões calculadas em torno da tónica<br>
+                                        ✓ Ideal para música clássica ocidental
+                                    </div>
+                                    <div id="mode-description-serial" style="display: none;">
+                                        ✓ Análise serial: todos os 12 tons tratados igualmente<br>
+                                        ✓ Ideal para música dodecafónica (Schoenberg, Berg, Webern)
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
 
                 <!-- Comparison Tab -->
@@ -400,8 +435,8 @@
 
                         <!-- Analysis Selection Horizontal Scroll -->
                         <div class="advanced-analysis-scroll">
-                            <!-- Cadence Detection -->
-                            <div class="analysis-card" data-analysis="cadences">
+                            <!-- Cadence Detection (Tonal Only) -->
+                            <div class="analysis-card" data-analysis="cadences" data-tonal-only="true">
                                 <div class="card-header">
                                     <span class="card-icon">🔗</span>
                                     <span class="card-title">Cadences</span>
@@ -410,8 +445,8 @@
                                 <button class="card-btn" onclick="selectAdvancedAnalysis('cadences')">Analyze</button>
                             </div>
 
-                            <!-- Modulation Detection -->
-                            <div class="analysis-card" data-analysis="modulation">
+                            <!-- Modulation Detection (Tonal Only) -->
+                            <div class="analysis-card" data-analysis="modulation" data-tonal-only="true">
                                 <div class="card-header">
                                     <span class="card-icon">🔄</span>
                                     <span class="card-title">Modulation</span>
@@ -440,8 +475,8 @@
                                 <button class="card-btn" onclick="selectAdvancedAnalysis('dissonance')">Analyze</button>
                             </div>
 
-                            <!-- Harmonic Functions -->
-                            <div class="analysis-card" data-analysis="harmonic_functions">
+                            <!-- Harmonic Functions (Tonal Only) -->
+                            <div class="analysis-card" data-analysis="harmonic_functions" data-tonal-only="true">
                                 <div class="card-header">
                                     <span class="card-icon">Ⅰ</span>
                                     <span class="card-title">Harmonic Depth</span>
@@ -480,24 +515,14 @@
                                 <button class="card-btn" onclick="selectAdvancedAnalysis('chromatic_analysis')">Analyze</button>
                             </div>
 
-                            <!-- Symmetry Analysis -->
+                            <!-- Symmetry Analysis (Adapts to Tonal/Serial mode) -->
                             <div class="analysis-card" data-analysis="symmetry">
                                 <div class="card-header">
                                     <span class="card-icon">↔️</span>
                                     <span class="card-title">Symmetry</span>
                                 </div>
-                                <p class="card-desc">Retrograde, inversion</p>
+                                <p class="card-desc">Retrograde, inversion, RI</p>
                                 <button class="card-btn" onclick="selectSymmetryAnalysis('symmetry')">Analyze</button>
-                            </div>
-
-                            <!-- Symmetry Analysis (Music21) -->
-                            <div class="analysis-card" data-analysis="symmetry_music21">
-                                <div class="card-header">
-                                    <span class="card-icon">🎼</span>
-                                    <span class="card-title">Symmetry (Music21)</span>
-                                </div>
-                                <p class="card-desc">Using music21 native methods</p>
-                                <button class="card-btn" onclick="selectSymmetryAnalysis('symmetry_music21')">Analyze</button>
                             </div>
 
                             <!-- Statistics -->
@@ -682,7 +707,7 @@
 
         <footer>
             <p>MIAL &copy; 2025 - GNU / GPL License</p>
-            <p>version 0.7</p>
+            <p>version 0.7.1</p>
             <button id="about-btn" class="about-link-btn">About the Project</button>
         </footer>
     </div>

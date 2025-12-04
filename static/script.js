@@ -267,6 +267,15 @@ async function handleFileUpload(event) {
         analysisSection.style.display = 'block';
         showTabsNavigation();  // Show tabs when file is loaded
 
+        // Show environment selection section
+        const environmentSection = document.getElementById('environment-selection-section');
+        if (environmentSection) {
+            environmentSection.style.display = 'block';
+        }
+
+        // Detect tonality automatically
+        detectTonality(currentFilePath);
+
     } catch (error) {
         alert('Error processing file: ' + error.message);
     } finally {
@@ -3879,8 +3888,27 @@ function renderSymmetryAdvanced(data) {
 
     const sym = data.symmetry || {};
     let html = `<div class="analysis-result">
-        <p style="margin-bottom: 20px; color: #4d9eff;"><strong>${data.summary}</strong></p>
-        <table class="statistics-table">
+        <p style="margin-bottom: 20px; color: #4d9eff;"><strong>${data.summary}</strong></p>`;
+
+    // Show analysis method and tonality info if available
+    if (sym.method || sym.tonality) {
+        html += `<div style="margin-bottom: 15px; padding: 10px; background: var(--bg-secondary); border-radius: 4px; font-size: 0.9em;">`;
+
+        if (sym.method) {
+            const methodLabel = sym.method === 'tonal' ? '🎼 Análise Tonal' : '🎵 Análise Serial (12-tone)';
+            html += `<div style="margin-bottom: 5px;"><strong>Método:</strong> ${methodLabel}</div>`;
+        }
+
+        if (sym.tonality && sym.method === 'tonal') {
+            const modeLabel = sym.mode === 'major' ? 'Maior' : sym.mode === 'minor' ? 'Menor' : sym.mode;
+            html += `<div><strong>Tonalidade:</strong> ${sym.tonality} ${modeLabel} (Tónica: ${sym.tonic_pitch_class})</div>`;
+            html += `<div style="margin-top: 5px; font-size: 0.85em; color: var(--secondary-text);">Inversões calculadas em torno da tónica</div>`;
+        }
+
+        html += `</div>`;
+    }
+
+    html += `<table class="statistics-table">
             <tr>
                 <td><strong>Retrograde Similarity (R):</strong></td>
                 <td>${sym.retrograde_score}%</td>
@@ -4145,14 +4173,28 @@ async function analyzeSymmetryForInstrument(partIndex, partName) {
     `;
 
     try {
+        // Get environment from checkbox (only for 'symmetry' type, not 'symmetry_music21')
+        const environment = (analysisType === 'symmetry')
+            ? (window.analysisEnvironment || 'tonal')
+            : 'serial';  // symmetry_music21 always uses serial
+
+        const requestBody = {
+            file_path: currentFilePath,
+            analysis_type: analysisType,
+            part_index: partIndex
+        };
+
+        // Only add environment parameter for regular symmetry analysis
+        if (analysisType === 'symmetry') {
+            requestBody.environment = environment;
+        }
+
+        console.log('Sending symmetry analysis request:', requestBody);
+
         const response = await fetch('/api/advanced-analysis', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                file_path: currentFilePath,
-                analysis_type: analysisType,
-                part_index: partIndex
-            })
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -4185,6 +4227,121 @@ function closeSymmetryInstruments() {
     select.innerHTML = '<option value="">-- Select an instrument --</option>';
     select.onchange = null;
 }
+
+// ============ TONAL VS SERIAL ANALYSIS FUNCTIONS ============
+
+/**
+ * Detect tonality of the uploaded score
+ */
+async function detectTonality(filePath) {
+    if (!filePath) return;
+
+    try {
+        const response = await fetch('/api/detect-tonality', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_path: filePath })
+        });
+
+        if (!response.ok) {
+            console.warn('Tonality detection failed');
+            return;
+        }
+
+        const data = await response.json();
+
+        if (data.tonality_detected) {
+            // Store tonality info globally
+            window.detectedTonality = {
+                tonality: data.tonality,
+                mode: data.mode,
+                tonic_pitch_class: data.tonic_pitch_class
+            };
+
+            // Update UI to show detected tonality
+            const tonalityInfo = document.getElementById('tonality-info');
+            const detectedTonalitySpan = document.getElementById('detected-tonality');
+
+            if (tonalityInfo && detectedTonalitySpan) {
+                detectedTonalitySpan.textContent = `${data.tonality} ${data.mode === 'major' ? 'Maior' : data.mode === 'minor' ? 'Menor' : data.mode}`;
+                tonalityInfo.style.display = 'block';
+            }
+
+            // Ensure checkbox is unchecked (default to tonal)
+            const serialCheckbox = document.getElementById('serialAnalysis');
+            if (serialCheckbox) {
+                serialCheckbox.checked = false;
+                updateEnvironmentBadge(false);
+            }
+
+            console.log('Tonality detected:', data.tonality, data.mode);
+        } else {
+            console.log('No clear tonality detected');
+            window.detectedTonality = null;
+        }
+    } catch (error) {
+        console.error('Error detecting tonality:', error);
+    }
+}
+
+/**
+ * Update environment badge based on checkbox state
+ */
+function updateEnvironmentBadge(isSerial) {
+    const badge = document.getElementById('environment-badge');
+    if (badge) {
+        badge.textContent = isSerial ? '🎵 Serial (12-tone)' : '🎼 Tonal';
+    }
+
+    // Update mode descriptions
+    const tonalDesc = document.getElementById('mode-description-tonal');
+    const serialDesc = document.getElementById('mode-description-serial');
+    if (tonalDesc && serialDesc) {
+        tonalDesc.style.display = isSerial ? 'none' : 'block';
+        serialDesc.style.display = isSerial ? 'block' : 'none';
+    }
+
+    // Filter advanced analysis cards
+    filterAdvancedAnalysisCards(isSerial);
+
+    // Store in global variable
+    window.analysisEnvironment = isSerial ? 'serial' : 'tonal';
+    console.log('Analysis environment set to:', window.analysisEnvironment);
+}
+
+/**
+ * Filter advanced analysis cards based on environment
+ */
+function filterAdvancedAnalysisCards(isSerial) {
+    const tonalOnlyCards = document.querySelectorAll('[data-tonal-only="true"]');
+
+    tonalOnlyCards.forEach(card => {
+        if (isSerial) {
+            // Hide tonal-only analyses in serial mode
+            card.style.display = 'none';
+        } else {
+            // Show all analyses in tonal mode
+            card.style.display = 'block';
+        }
+    });
+
+    console.log(`Filtered ${tonalOnlyCards.length} tonal-only analysis cards (serial mode: ${isSerial})`);
+}
+
+/**
+ * Initialize checkbox event listener
+ */
+document.addEventListener('DOMContentLoaded', function() {
+    const serialCheckbox = document.getElementById('serialAnalysis');
+    if (serialCheckbox) {
+        serialCheckbox.addEventListener('change', function() {
+            updateEnvironmentBadge(this.checked);
+        });
+
+        // Initialize with default value
+        updateEnvironmentBadge(false);
+    }
+});
 
 /**
  * Initialize zoom and scroll controls for comparison staff view

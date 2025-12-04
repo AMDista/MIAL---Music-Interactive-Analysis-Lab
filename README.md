@@ -46,6 +46,26 @@ A modern web application for MusicXML score analysis, combining traditional musi
 *   **Automatic Context:** The prompt sent to the AI automatically includes the section title and analyzed data.
 *   **Comparison Analysis:** Dedicated prompts for comparative AI analysis
 
+### 🔄 Advanced Analysis Tab
+*   **Symmetry Analysis (Tonal vs Serial):**
+    *   **Automatic Tonality Detection:** Upon file upload, the system detects the key center
+    *   **Environment Selection:** Choose between Tonal (default) or Serial (12-tone) analysis
+    *   **Tonal Mode:** Analyzes symmetry patterns relative to the tonic (key center)
+        - Inversions calculated as: `(2 × tonic - pitch) mod 12`
+        - Ideal for Western classical tonal music
+    *   **Serial Mode:** Dodecaphonic analysis treating all 12 pitches equally
+        - Uses music21 serial transformation methods
+        - Ideal for atonal/serial music (Schoenberg, Berg, Webern)
+    *   **Comprehensive Metrics:**
+        - Retrograde (R): Reversed pitch sequence similarity
+        - Inversion (I): Mirror transformation similarity
+        - Retrograde-Inversion (RI): Combined transformation
+    *   **Visual Feedback:** See detected tonality and current analysis mode
+*   **Other Advanced Analyses:**
+    *   Cadence detection, modulation tracking, voice leading
+    *   Dissonance analysis, harmonic functions, phrase structure
+    *   Texture analysis, chromatic analysis, complete statistics
+
 ### 🎨 Modern Interface
 *   **Themes:** Toggle between **Dark Mode** (default, with blue and purple accents) and **Light Mode** (sober and concise).
 *   **Responsive Design:** Adaptable to desktops, tablets, and mobile devices.
@@ -181,7 +201,22 @@ Please analyze the following melodic characteristics:
 
 ## 📝 Version History
 
-### v0.7 (Latest)
+### v0.7.1 (Latest)
+**New Features:**
+- ✅ **Tonal vs Serial Analysis:** Intelligent symmetry analysis with environment detection
+  - **Automatic Tonality Detection:** System automatically identifies the key center of uploaded scores
+  - **Dual Analysis Modes:**
+    - **Tonal Mode (Default):** Inversions calculated around the tonic (key center)
+    - **Serial Mode (12-tone):** Dodecaphonic analysis using music21 serial methods
+  - **Dynamic UI:** Visual feedback showing detected tonality and selected analysis environment
+  - **Smart Routing:** Analysis method automatically adapts based on user selection
+  - **Enhanced Results:** Displays analysis method, tonality information, and tonic pitch class
+- **Symmetry Analysis Improvements:**
+  - Retrograde-Inversion (RI) now included in all symmetry analyses
+  - Tonal analysis uses formula: `inverted = (2 * tonic - pitch) % 12`
+  - Serial analysis uses music21.serial transformations (R, I, RI)
+
+### v0.7
 **Major Features:**
 - ✅ **Staff Notation Display:** Professional Verovio-based rendering with full zoom and scroll support
 - ✅ **Instrument Comparison Tab:** Compare up to 5 instruments with dual visualization modes (Piano Roll & Staff Notation)
