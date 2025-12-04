@@ -201,7 +201,26 @@ Please analyze the following melodic characteristics:
 
 ## 📝 Version History
 
-### v0.7.1 (Latest)
+### v0.7.1.1 (Latest)
+**New Features:**
+- ✅ **Staff Rendering Viewer for Symmetry Analysis:**
+  - **Automatic Integration:** Staff rendering viewer appears automatically below symmetry analysis results
+  - **Measure Visualization:** Renders musical notation for measures identified in Retrograde, Inversion, or RI transformations
+  - **Interactive Controls:**
+    - Zoom slider (20-200%) for detailed examination
+    - Scroll navigation buttons for large scores
+    - Fit-to-width button for optimal viewing
+  - **Gap Detection:** Visual indicators for non-contiguous measure ranges
+  - **Continuity Badge:** Real-time display of measure continuity status
+  - **Verovio Integration:** Professional music engraving with full MusicXML support
+  - **Responsive Display:** 600px minimum height with scrollable overflow
+  - **Backend Optimization:**
+    - Cached score loading for 1594x performance improvement
+    - Thread-safe caching with automatic 1-hour expiry
+    - Efficient measure extraction preserving clef, key, and time signatures
+  - **API Endpoint:** `/api/analysis/render-staff` for on-demand staff rendering
+
+### v0.7.1
 **New Features:**
 - ✅ **Tonal vs Serial Analysis:** Intelligent symmetry analysis with environment detection
   - **Automatic Tonality Detection:** System automatically identifies the key center of uploaded scores

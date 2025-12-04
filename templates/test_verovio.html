@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Verovio Toolkit</title>
+    <script src="static/verovio-toolkit.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        #svg-output {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎼 Teste do Verovio Toolkit</h1>
+
+    <div id="status-container"></div>
+
+    <div id="svg-output"></div>
+
+    <script>
+        const statusContainer = document.getElementById('status-container');
+        const svgOutput = document.getElementById('svg-output');
+
+        function addStatus(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = message;
+            statusContainer.appendChild(div);
+            console.log(`[${type.toUpperCase()}]`, message);
+        }
+
+        addStatus('⏳ Iniciando teste do Verovio Toolkit...', 'info');
+
+        // Verificar se verovio está definido
+        if (typeof verovio === 'undefined') {
+            addStatus('❌ ERRO: verovio não está definido!', 'error');
+            addStatus('O ficheiro verovio-toolkit.js pode não ter sido carregado.', 'error');
+        } else {
+            addStatus('✅ verovio object encontrado', 'success');
+
+            // Aguardar inicialização do WASM
+            addStatus('⏳ Aguardando inicialização do WASM...', 'info');
+
+            verovio.module.onRuntimeInitialized = function() {
+                try {
+                    addStatus('✅ WASM Runtime inicializado', 'success');
+
+                    const vrvToolkit = new verovio.toolkit();
+                    addStatus('✅ Verovio Toolkit instanciado', 'success');
+
+                    const version = vrvToolkit.getVersion();
+                    addStatus(`✅ Versão do Verovio: ${version}`, 'success');
+
+                    // Teste de renderização simples
+                    const testMei = `<?xml version="1.0" encoding="UTF-8"?>
+                        <mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="4.0.0">
+                            <music>
+                                <body>
+                                    <mdiv>
+                                        <score>
+                                            <scoreDef>
+                                                <staffGrp>
+                                                    <staffDef n="1" lines="5" clef.shape="G" clef.line="2"/>
+                                                </staffGrp>
+                                            </scoreDef>
+                                            <section>
+                                                <measure n="1">
+                                                    <staff n="1">
+                                                        <layer n="1">
+                                                            <note pname="c" oct="4" dur="1"/>
+                                                        </layer>
+                                                    </staff>
+                                                </measure>
+                                            </section>
+                                        </score>
+                                    </mdiv>
+                                </body>
+                            </music>
+                        </mei>`;
+
+                    addStatus('⏳ Testando renderização de SVG...', 'info');
+
+                    vrvToolkit.setOptions({
+                        scale: 40,
+                        adjustPageHeight: true
+                    });
+
+                    const loaded = vrvToolkit.loadData(testMei);
+
+                    if (!loaded) {
+                        addStatus('❌ Falha ao carregar dados MEI', 'error');
+                    } else {
+                        addStatus('✅ Dados MEI carregados com sucesso', 'success');
+
+                        const svg = vrvToolkit.renderToSVG(1, {});
+
+                        if (svg) {
+                            addStatus('✅ SVG renderizado com sucesso!', 'success');
+                            svgOutput.innerHTML = svg;
+                            addStatus('✅ SVG inserido no DOM', 'success');
+
+                            addStatus('', 'info');
+                            addStatus('🎉 TODOS OS TESTES PASSARAM!', 'success');
+                            addStatus('O Verovio Toolkit está funcionando corretamente.', 'success');
+                        } else {
+                            addStatus('❌ Falha ao gerar SVG', 'error');
+                        }
+                    }
+
+                } catch (error) {
+                    addStatus(`❌ ERRO durante inicialização: ${error.message}`, 'error');
+                    console.error('Erro completo:', error);
+                }
+            };
+
+            // Timeout de segurança
+            setTimeout(() => {
+                if (!document.querySelector('.success')) {
+                    addStatus('⚠️ Timeout: Verovio demorou muito para inicializar', 'error');
+                    addStatus('Isto pode indicar um problema com o WASM embutido', 'error');
+                }
+            }, 10000);
+        }
+    </script>
+</body>
+</html>

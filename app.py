@@ -8,12 +8,194 @@ import xml.etree.ElementTree as ET
 import datetime
 import io
 from openai import OpenAI
+import time
+from threading import Lock
 
 app = Flask(__name__)
 
 # Configuration
 CONFIG_FILE = 'config.json'
 AI_MODELS_CONFIG_FILE = 'config/ai_models.json'
+
+# ========================================
+# SCORE CACHE SYSTEM
+# ========================================
+# Cache global de scores para evitar re-parsing
+score_cache = {}
+score_cache_lock = Lock()
+CACHE_EXPIRY = 3600  # 1 hora
+
+def get_cached_score(file_path):
+    """
+    Obtém score do cache ou faz parse e guarda no cache.
+    Evita múltiplas chamadas a converter.parse() para o mesmo ficheiro.
+
+    Args:
+        file_path: Caminho para ficheiro MusicXML
+
+    Returns:
+        music21.stream.Score: Score parseado
+
+    Raises:
+        Exception: Se falhar o parsing
+    """
+    with score_cache_lock:
+        if file_path in score_cache:
+            score, timestamp = score_cache[file_path]
+            if time.time() - timestamp < CACHE_EXPIRY:
+                print(f"[CACHE HIT] Using cached score for {file_path}")
+                return score
+            else:
+                # Expirado, remover
+                print(f"[CACHE EXPIRED] Removing expired cache for {file_path}")
+                del score_cache[file_path]
+
+        # Parse e guardar no cache
+        print(f"[CACHE MISS] Parsing and caching {file_path}")
+        score = converter.parse(file_path)
+        score_cache[file_path] = (score, time.time())
+        return score
+
+def clear_expired_cache():
+    """Limpar entradas expiradas do cache."""
+    with score_cache_lock:
+        expired_keys = [
+            k for k, (_, timestamp) in score_cache.items()
+            if time.time() - timestamp >= CACHE_EXPIRY
+        ]
+        for key in expired_keys:
+            print(f"[CACHE CLEANUP] Removing expired cache for {key}")
+            del score_cache[key]
+
+        if expired_keys:
+            print(f"[CACHE CLEANUP] Removed {len(expired_keys)} expired entries")
+# ========================================
+
+# ========================================
+# STAFF RENDERING FUNCTIONS
+# ========================================
+
+def calculate_gaps(measure_numbers):
+    """
+    Calcula gaps entre compassos não contínuos.
+
+    Args:
+        measure_numbers: Lista de números de compassos [1, 5, 12]
+
+    Returns:
+        dict: {
+            'is_contiguous': bool,
+            'gaps': [{'from': int, 'to': int, 'gap': int}],
+            'total_measures': int
+        }
+
+    Example:
+        Input: [1, 5, 12]
+        Output: {
+            'is_contiguous': False,
+            'gaps': [
+                {'from': 1, 'to': 5, 'gap': 3},
+                {'from': 5, 'to': 12, 'gap': 6}
+            ],
+            'total_measures': 3
+        }
+    """
+    if not measure_numbers:
+        return {'is_contiguous': True, 'gaps': [], 'total_measures': 0}
+
+    sorted_measures = sorted(set(measure_numbers))
+    gaps = []
+
+    for i in range(len(sorted_measures) - 1):
+        current = sorted_measures[i]
+        next_measure = sorted_measures[i + 1]
+        if next_measure - current > 1:
+            gap = next_measure - current - 1
+            gaps.append({
+                'from': current,
+                'to': next_measure,
+                'gap': gap
+            })
+
+    return {
+        'is_contiguous': len(gaps) == 0,
+        'gaps': gaps,
+        'total_measures': len(sorted_measures)
+    }
+
+def extract_measures_from_musicxml(file_path, measure_numbers, part_index=0):
+    """
+    Extrai compassos específicos de um MusicXML usando music21.
+
+    Args:
+        file_path: Caminho para ficheiro MusicXML
+        measure_numbers: Lista de números de compassos [1, 5, 12]
+        part_index: Índice do instrumento a extrair (default: 0)
+
+    Returns:
+        str: MusicXML trimado com compassos selecionados
+
+    Raises:
+        ValueError: Se measure_numbers inválido ou part_index fora do range
+        FileNotFoundError: Se file_path não existe
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    if not measure_numbers or not isinstance(measure_numbers, list):
+        raise ValueError("measure_numbers must be a non-empty list")
+
+    # Usar cache para evitar re-parsing
+    score = get_cached_score(file_path)
+
+    if part_index >= len(score.parts):
+        raise ValueError(f"Part index {part_index} out of range (total parts: {len(score.parts)})")
+
+    # Validar números de compassos
+    total_measures = len(score.parts[0].getElementsByClass('Measure'))
+    invalid_measures = [m for m in measure_numbers if m < 1 or m > total_measures]
+    if invalid_measures:
+        raise ValueError(f"Invalid measure numbers {invalid_measures}. Valid range: 1-{total_measures}")
+
+    # Criar novo score apenas com o part selecionado
+    new_score = stream.Score()
+    target_part = score.parts[part_index]
+    new_part = stream.Part()
+
+    # Copiar metadata do part original
+    new_part.partName = target_part.partName
+    for element in target_part.getElementsByClass(['Instrument', 'Clef', 'KeySignature', 'TimeSignature']):
+        if element.offset == 0:  # Elementos iniciais
+            new_part.insert(0, element)
+
+    # Extrair compassos solicitados
+    all_measures = target_part.getElementsByClass('Measure')
+    for measure_num in sorted(set(measure_numbers)):  # Ordenar e remover duplicados
+        if 1 <= measure_num <= len(all_measures):
+            measure = all_measures[measure_num - 1]  # Índice começa em 0
+            new_part.append(measure)
+
+    new_score.append(new_part)
+
+    # Converter para MusicXML string
+    musicxml_result = new_score.write('musicxml')
+
+    # music21 pode retornar string ou Path, precisamos garantir que é string
+    if hasattr(musicxml_result, '__fspath__') or not isinstance(musicxml_result, str):
+        # É um Path object, ler o ficheiro
+        musicxml_path = str(musicxml_result)
+        with open(musicxml_path, 'r', encoding='utf-8') as f:
+            musicxml_content = f.read()
+        try:
+            os.remove(musicxml_path)  # Limpar ficheiro temporário
+        except:
+            pass
+        return musicxml_content
+
+    # Já é uma string
+    return musicxml_result
+
+# ========================================
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -62,6 +244,14 @@ def obter_titulo_do_xml(file_path):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/test_verovio')
+def test_verovio():
+    return render_template('test_verovio.html')
+
+@app.route('/test_styles')
+def test_styles():
+    return render_template('test_styles.html')
 
 @app.route('/settings', methods=['GET'])
 def get_settings():
@@ -602,6 +792,98 @@ Please provide a detailed and structured analysis in Markdown."""
         
     except Exception as e:
         return jsonify({'error': f'Error in AI analysis: {str(e)}'}), 500
+
+
+@app.route('/api/analysis/render-staff', methods=['POST'])
+def render_staff():
+    """
+    Endpoint para renderização de pautas de compassos específicos.
+
+    Request Body:
+        {
+            "measures": [1, 5, 12],
+            "part_index": 0,
+            "file_path": "/path/to/file.musicxml"
+        }
+
+    Response:
+        {
+            "musicxml": "<score-partwise>...</score-partwise>",
+            "metadata": {
+                "measures": [1, 5, 12],
+                "is_contiguous": false,
+                "gaps": [...],
+                "part_name": "Violin",
+                "total_measures": 3
+            }
+        }
+    """
+    try:
+        data = request.json
+
+        # Validação de parâmetros
+        measures = data.get('measures', [])
+        part_index = data.get('part_index', 0)
+        file_path = data.get('file_path')
+
+        if not measures:
+            return jsonify({'error': 'No measures provided'}), 400
+
+        if not isinstance(measures, list):
+            return jsonify({'error': 'measures must be a list'}), 400
+
+        if len(measures) > 50:
+            return jsonify({'error': 'Too many measures (max 50)'}), 400
+
+        if not file_path:
+            return jsonify({'error': 'No file_path provided'}), 400
+
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 404
+
+        # Limpar cache expirado
+        clear_expired_cache()
+
+        # Extrair MusicXML trimado
+        try:
+            musicxml_trimmed = extract_measures_from_musicxml(
+                file_path, measures, part_index
+            )
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            return jsonify({'error': f'Failed to extract measures: {str(e)}'}), 500
+
+        if not musicxml_trimmed:
+            return jsonify({'error': 'Failed to extract measures'}), 500
+
+        # Calcular metadados
+        gap_info = calculate_gaps(measures)
+
+        # Obter nome do instrumento
+        score = get_cached_score(file_path)
+        part_name = "Unknown"
+        if part_index < len(score.parts):
+            part_name = score.parts[part_index].partName or f"Part {part_index + 1}"
+
+        metadata = {
+            'measures': sorted(set(measures)),
+            'is_contiguous': gap_info['is_contiguous'],
+            'gaps': gap_info['gaps'],
+            'part_name': part_name,
+            'total_measures': gap_info['total_measures']
+        }
+
+        print(f"[RENDER STAFF] Successfully rendered {len(measures)} measures for {part_name}")
+
+        return jsonify({
+            'musicxml': musicxml_trimmed,
+            'metadata': metadata
+        }), 200
+
+    except Exception as e:
+        print(f"[RENDER STAFF ERROR] {str(e)}")
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
 @app.route('/comparison_data', methods=['POST'])

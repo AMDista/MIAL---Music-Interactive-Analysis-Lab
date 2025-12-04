@@ -1,5 +1,6 @@
 let currentFilePath = null;
 let analysisData = null;
+let currentSymmetryPartIndex = 0;
 
 const fileInput = document.getElementById('musicxml-file');
 const fileName = document.getElementById('file-name');
@@ -3960,7 +3961,93 @@ function renderSymmetryAdvanced(data) {
         <p style="margin-top: 15px; font-size: 0.9rem; color: #999;">
             Higher percentages indicate stronger symmetrical patterns in the pitch sequence.
         </p>
+
+        <!-- Staff Rendering Viewer -->
+        <div id="staff-rendering-viewer-container"></div>
     </div>`;
+
+    // Determine which symmetry type has measures to display and instantiate viewer
+    setTimeout(() => {
+        let targetAnalysisType = null;
+        let targetMeasures = [];
+
+        // Priority: Retrograde > Inversion > RI
+        if (sym.retrograde_measures && sym.retrograde_measures.length > 0) {
+            targetAnalysisType = 'Retrograde';
+            targetMeasures = sym.retrograde_measures;
+        } else if (sym.inversion_measures && sym.inversion_measures.length > 0) {
+            targetAnalysisType = 'Inversion';
+            targetMeasures = sym.inversion_measures;
+        } else if (sym.ri_measures && sym.ri_measures.length > 0) {
+            targetAnalysisType = 'Retrograde-Inversion';
+            targetMeasures = sym.ri_measures;
+        }
+
+        // Only instantiate viewer if we have measures to display
+        if (targetAnalysisType && targetMeasures.length > 0) {
+            const viewerContainer = document.getElementById('staff-rendering-viewer-container');
+            if (viewerContainer) {
+                // Create viewer HTML structure
+                viewerContainer.innerHTML = `
+                    <div class="staff-rendering-viewer" style="margin-top: 30px;">
+                        <div class="staff-viewer-header">
+                            <h3>🎼 Visualização de Pautas - <span>${targetAnalysisType}</span></h3>
+
+                            <div class="staff-controls-bar">
+                                <div class="control-group">
+                                    <label>Zoom:</label>
+                                    <input type="range" id="staff-zoom-slider" min="20" max="200" value="100" step="10" class="slider">
+                                    <span id="staff-zoom-value">100%</span>
+                                </div>
+
+                                <div class="control-group">
+                                    <button class="nav-btn" id="staff-scroll-left">← Scroll</button>
+                                    <button class="nav-btn" id="staff-scroll-right">Scroll →</button>
+                                    <button class="nav-btn" id="staff-fit-width">⬚ Fit Width</button>
+                                </div>
+
+                                <div class="control-group info-badge">
+                                    <span class="badge" id="staff-continuity-badge">
+                                        ✅ Compassos contínuos
+                                    </span>
+                                </div>
+
+                                <button class="btn-primary" id="staff-render-btn">
+                                    🎨 Renderizar Pautas
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="staff-viewer-container">
+                            <div class="staff-svg-wrapper" id="staff-svg-wrapper">
+                                <div style="height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; color: var(--secondary-text);">
+                                    <p style="font-size: 16px; margin: 0;">Clique em "Renderizar Pautas" para visualizar os compassos</p>
+                                    <p style="font-size: 14px; margin-top: 10px;">Compassos: ${targetMeasures.join(', ')}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="staff-viewer-footer">
+                            <span id="staff-footer-info">Compassos: ${targetMeasures.join(', ')} | Parte: ${currentSymmetryPartIndex}</span>
+                        </div>
+                    </div>
+                `;
+
+                // Instantiate the viewer class
+                const viewer = new StaffRenderingViewer(
+                    targetAnalysisType,
+                    targetMeasures,
+                    currentSymmetryPartIndex
+                );
+
+                console.log('Staff Rendering Viewer initialized:', {
+                    type: targetAnalysisType,
+                    measures: targetMeasures,
+                    partIndex: currentSymmetryPartIndex
+                });
+            }
+        }
+    }, 100);
 
     return html;
 }
@@ -4448,3 +4535,294 @@ function addComparisonStaffScrolling() {
         console.log('✅ Scrolling enabled for comparison staff view');
     }
 }
+
+// ========================================
+// STAFF RENDERING VIEWER
+// ========================================
+
+class StaffRenderingViewer {
+    constructor(analysisType, measures, partIndex) {
+        this.analysisType = analysisType;  // 'retrograde', 'inversion', 'ri'
+        this.measures = measures || [];
+        this.partIndex = partIndex || 0;
+        this.currentZoom = 100;
+        this.metadata = null;
+
+        // Setup event listeners APÓS HTML estar no DOM
+        this.setupEventListeners();
+
+        console.log('StaffRenderingViewer initialized:', {
+            type: this.analysisType,
+            measures: this.measures,
+            partIndex: this.partIndex
+        });
+    }
+
+    setupEventListeners() {
+        const renderBtn = document.getElementById('staff-render-btn');
+        const zoomSlider = document.getElementById('staff-zoom-slider');
+        const scrollLeftBtn = document.getElementById('staff-scroll-left');
+        const scrollRightBtn = document.getElementById('staff-scroll-right');
+        const fitWidthBtn = document.getElementById('staff-fit-width');
+
+        console.log('Setting up event listeners...', {
+            renderBtn: !!renderBtn,
+            zoomSlider: !!zoomSlider,
+            scrollLeftBtn: !!scrollLeftBtn,
+            scrollRightBtn: !!scrollRightBtn,
+            fitWidthBtn: !!fitWidthBtn
+        });
+
+        if (renderBtn) {
+            renderBtn.addEventListener('click', () => {
+                console.log('Render button clicked!');
+                this.renderStaff();
+            });
+        } else {
+            console.error('Render button not found! ID: staff-render-btn');
+        }
+
+        if (zoomSlider) {
+            zoomSlider.addEventListener('input', (e) => this.setZoom(e.target.value));
+        }
+
+        if (scrollLeftBtn) {
+            scrollLeftBtn.addEventListener('click', () => this.scroll(-100));
+        }
+
+        if (scrollRightBtn) {
+            scrollRightBtn.addEventListener('click', () => this.scroll(100));
+        }
+
+        if (fitWidthBtn) {
+            fitWidthBtn.addEventListener('click', () => this.fitToWidth());
+        }
+    }
+
+    async renderStaff() {
+        try {
+            // Validar file path
+            if (!currentFilePath) {
+                throw new Error('Nenhum ficheiro carregado. Por favor, carregue um ficheiro MusicXML primeiro.');
+            }
+
+            if (!this.measures || this.measures.length === 0) {
+                throw new Error('Nenhum compasso identificado para renderizar.');
+            }
+
+            // Mostrar loading
+            this.showLoading();
+
+            // 1. Buscar MusicXML trimado do backend
+            const response = await fetch('/api/analysis/render-staff', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    measures: this.measures,
+                    part_index: this.partIndex,
+                    file_path: currentFilePath
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || `HTTP Error: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // Validar resposta
+            if (!data.musicxml) {
+                throw new Error('Backend não retornou MusicXML válido.');
+            }
+
+            this.metadata = data.metadata;
+
+            // 2. Aguardar Verovio estar pronto
+            await window.verovioReady;
+
+            if (!window.vrvToolkit) {
+                throw new Error('Verovio Toolkit não inicializado. Recarregue a página.');
+            }
+
+            // 3. Configurar Verovio
+            window.vrvToolkit.setOptions({
+                scale: 40,
+                adjustPageHeight: true,
+                pageHeight: 6000,
+                pageWidth: 2100,
+                breaks: 'none',
+                noFooter: true,
+                noHeader: true,
+                footer: 'none',
+                header: 'none'
+            });
+
+            // 4. Carregar MusicXML
+            const loaded = window.vrvToolkit.loadData(data.musicxml);
+
+            if (!loaded) {
+                throw new Error('Verovio falhou ao carregar MusicXML. Verifique a sintaxe do ficheiro.');
+            }
+
+            // 5. Renderizar SVG
+            const svg = window.vrvToolkit.renderToSVG(1, {});
+
+            if (!svg) {
+                throw new Error('Verovio falhou ao gerar SVG.');
+            }
+
+            // 6. Exibir com indicadores de gaps
+            this.displayStaffWithGapIndicators(svg, data.metadata);
+
+            // 7. Atualizar informações
+            this.updateFooterInfo(data.metadata);
+
+            console.log('[STAFF VIEWER] Successfully rendered staff for measures:', this.measures);
+
+        } catch (error) {
+            this.showError(error.message);
+            console.error('[STAFF VIEWER ERROR]', error);
+        }
+    }
+
+    displayStaffWithGapIndicators(svg, metadata) {
+        const container = document.getElementById('staff-svg-wrapper');
+        if (!container) {
+            console.error('[STAFF VIEWER] Container #staff-svg-wrapper not found!');
+            return;
+        }
+
+        console.log('[STAFF VIEWER] Displaying SVG in container');
+        container.innerHTML = '';
+
+        // Mostrar aviso de gaps se necessário
+        if (!metadata.is_contiguous && metadata.gaps && metadata.gaps.length > 0) {
+            const warning = document.createElement('div');
+            warning.className = 'measure-gap-indicator';
+            warning.innerHTML = `
+                ⚠️ <strong>Compassos não contínuos:</strong>
+                ${metadata.gaps.map(g => `+${g.gap} compassos entre ${g.from} e ${g.to}`).join(', ')}
+            `;
+            container.appendChild(warning);
+        }
+
+        // Inserir SVG
+        const svgDiv = document.createElement('div');
+        svgDiv.innerHTML = svg;
+        svgDiv.style.width = '100%';
+        svgDiv.style.height = '100%';
+        svgDiv.style.overflow = 'auto';
+        svgDiv.style.display = 'flex';
+        svgDiv.style.alignItems = 'flex-start';
+        svgDiv.style.justifyContent = 'center';
+        container.appendChild(svgDiv);
+
+        console.log('[STAFF VIEWER] SVG inserted into DOM');
+
+        // Atualizar badge de continuidade
+        this.updateContinuityBadge(metadata.is_contiguous);
+
+        // Reset zoom
+        this.currentZoom = 100;
+        const slider = document.getElementById('staff-zoom-slider');
+        if (slider) slider.value = 100;
+        const zoomValue = document.getElementById('staff-zoom-value');
+        if (zoomValue) zoomValue.textContent = '100%';
+    }
+
+    setZoom(percentage) {
+        this.currentZoom = parseInt(percentage);
+        const svg = document.querySelector('#staff-svg-wrapper svg');
+        if (svg) {
+            const scale = percentage / 100;
+            svg.style.transform = `scale(${scale})`;
+            svg.style.transformOrigin = 'top left';
+        }
+
+        const label = document.getElementById('staff-zoom-value');
+        if (label) {
+            label.textContent = `${percentage}%`;
+        }
+    }
+
+    scroll(pixels) {
+        const container = document.querySelector('.staff-viewer-container');
+        if (container) {
+            container.scrollLeft += pixels;
+        }
+    }
+
+    fitToWidth() {
+        const container = document.querySelector('.staff-viewer-container');
+        const svg = document.querySelector('#staff-svg-wrapper svg');
+
+        if (svg && container) {
+            try {
+                const bbox = svg.getBBox();
+                const availableWidth = container.clientWidth - 48; // padding
+                const scale = Math.min((availableWidth / bbox.width) * 100, 200); // Max 200%
+
+                this.currentZoom = Math.round(scale);
+
+                const slider = document.getElementById('staff-zoom-slider');
+                if (slider) slider.value = this.currentZoom;
+
+                this.setZoom(this.currentZoom);
+            } catch (e) {
+                console.warn('[STAFF VIEWER] Could not calculate fit-to-width:', e);
+                this.setZoom(100); // Fallback to 100%
+            }
+        }
+    }
+
+    updateContinuityBadge(isContiguous) {
+        const badge = document.getElementById('staff-continuity-info');
+        if (badge) {
+            if (isContiguous) {
+                badge.classList.add('contiguous');
+                badge.textContent = '✅ Compassos contínuos';
+            } else {
+                badge.classList.remove('contiguous');
+                badge.textContent = '⚠️ Compassos não contínuos';
+            }
+        }
+    }
+
+    updateFooterInfo(metadata) {
+        const footer = document.getElementById('staff-info-text');
+        if (!footer) return;
+
+        const measuresText = `Compassos: ${metadata.measures.join(', ')}`;
+        const partText = `Instrumento: ${metadata.part_name}`;
+
+        let gapText = '';
+        if (!metadata.is_contiguous && metadata.gaps && metadata.gaps.length > 0) {
+            const gapSummary = metadata.gaps.map(g => `+${g.gap}`).join(', ');
+            gapText = `| Intervalos: ${gapSummary}`;
+        }
+
+        footer.textContent = `${measuresText} | ${partText} ${gapText}`;
+    }
+
+    showLoading() {
+        const output = document.getElementById('staff-rendering-output');
+        if (output) {
+            output.innerHTML = '<div class="loading">⏳ Renderizando pautas...</div>';
+        }
+    }
+
+    showError(message) {
+        const output = document.getElementById('staff-rendering-output');
+        if (output) {
+            output.innerHTML = `
+                <div class="error-message">
+                    ❌ <strong>Erro:</strong> ${message}
+                </div>
+            `;
+        }
+    }
+}
+
+// NÃO instanciar em DOMContentLoaded!
+// A classe será instanciada APÓS renderizar análise simétrica

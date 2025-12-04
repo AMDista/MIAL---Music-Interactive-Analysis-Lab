@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Staff Rendering Styles</title>
+    <link rel="stylesheet" href="../static/style.css">
+    <style>
+        body { padding: 20px; }
+        .test-section { margin-bottom: 40px; }
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" onclick="toggleTheme()">Toggle Dark/Light</button>
+
+    <div class="container">
+        <h1 style="text-align: center; margin-bottom: 40px;">🎨 Staff Rendering Viewer - Style Test</h1>
+
+        <div class="test-section">
+            <h2>Test 1: Viewer com Compassos Contínuos</h2>
+            <div class="staff-rendering-viewer">
+                <div class="staff-viewer-header">
+                    <h3>🎼 Visualização de Pautas - <span>Retrógrado</span></h3>
+
+                    <div class="staff-controls-bar">
+                        <div class="control-group">
+                            <label>Zoom:</label>
+                            <input type="range" min="20" max="200" value="100" step="10" class="slider">
+                            <span id="staff-zoom-value">100%</span>
+                        </div>
+
+                        <div class="control-group">
+                            <button class="nav-btn">← Scroll</button>
+                            <button class="nav-btn">Scroll →</button>
+                            <button class="nav-btn">⬚ Fit Width</button>
+                        </div>
+
+                        <div class="control-group info-badge">
+                            <span class="badge contiguous">
+                                ✅ Compassos contínuos
+                            </span>
+                        </div>
+
+                        <button class="btn-primary">
+                            🎨 Renderizar Pautas
+                        </button>
+                    </div>
+                </div>
+
+                <div class="staff-viewer-container">
+                    <div class="staff-svg-wrapper">
+                        <div style="background: white; padding: 40px; border-radius: 4px; text-align: center; color: #666;">
+                            <p style="font-size: 18px;">SVG seria renderizado aqui</p>
+                            <p style="font-size: 14px; margin-top: 10px;">Compassos: 1, 2, 3</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="staff-viewer-footer">
+                    <span>Compassos: 1, 2, 3 | Instrumento: Violin | Contínuos</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 2: Viewer com Compassos Não-Contínuos</h2>
+            <div class="staff-rendering-viewer">
+                <div class="staff-viewer-header">
+                    <h3>🎼 Visualização de Pautas - <span>Inversão</span></h3>
+
+                    <div class="staff-controls-bar">
+                        <div class="control-group">
+                            <label>Zoom:</label>
+                            <input type="range" min="20" max="200" value="100" step="10" class="slider">
+                            <span>100%</span>
+                        </div>
+
+                        <div class="control-group">
+                            <button class="nav-btn">← Scroll</button>
+                            <button class="nav-btn">Scroll →</button>
+                            <button class="nav-btn">⬚ Fit Width</button>
+                        </div>
+
+                        <div class="control-group info-badge">
+                            <span class="badge">
+                                ⚠️ Compassos não contínuos
+                            </span>
+                        </div>
+
+                        <button class="btn-primary">
+                            🎨 Renderizar Pautas
+                        </button>
+                    </div>
+                </div>
+
+                <div class="staff-viewer-container">
+                    <div class="staff-svg-wrapper">
+                        <div class="measure-gap-indicator">
+                            ⚠️ <strong>Compassos não contínuos:</strong>
+                            +2 compassos entre 1 e 3, +3 compassos entre 3 e 7
+                        </div>
+                        <div style="background: white; padding: 40px; border-radius: 4px; text-align: center; color: #666;">
+                            <p style="font-size: 18px;">SVG seria renderizado aqui</p>
+                            <p style="font-size: 14px; margin-top: 10px;">Compassos: 1, 3, 7 (gaps: +2, +3)</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="staff-viewer-footer">
+                    <span>Compassos: 1, 3, 7 | Instrumento: Cello | Intervalos: +2, +3</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 3: Estados de Loading e Erro</h2>
+            <div class="staff-rendering-viewer">
+                <div class="staff-viewer-header">
+                    <h3>🎼 Visualização de Pautas - <span>Estados</span></h3>
+                    <div class="staff-controls-bar">
+                        <button class="btn-primary" onclick="showLoading()">Show Loading</button>
+                        <button class="btn-primary" onclick="showError()">Show Error</button>
+                        <button class="btn-primary" onclick="showSuccess()">Show Success</button>
+                    </div>
+                </div>
+
+                <div class="staff-viewer-container">
+                    <div class="staff-svg-wrapper">
+                        <div id="staff-rendering-output">
+                            <div style="background: white; padding: 40px; border-radius: 4px; text-align: center; color: #666;">
+                                <p>Estado inicial</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="staff-viewer-footer">
+                    <span>Clique nos botões acima para testar estados</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.getAttribute('data-theme');
+            const newTheme = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', newTheme);
+        }
+
+        function showLoading() {
+            document.getElementById('staff-rendering-output').innerHTML =
+                '<div class="loading">⏳ Renderizando pautas...</div>';
+        }
+
+        function showError() {
+            document.getElementById('staff-rendering-output').innerHTML =
+                '<div class="error-message">❌ <strong>Erro:</strong> Falha ao carregar MusicXML</div>';
+        }
+
+        function showSuccess() {
+            document.getElementById('staff-rendering-output').innerHTML =
+                '<div style="background: white; padding: 40px; border-radius: 4px; text-align: center; color: #666;"><p style="font-size: 18px;">✅ SVG Renderizado com Sucesso!</p></div>';
+        }
+
+        // Simular interatividade do slider
+        document.querySelectorAll('.slider').forEach(slider => {
+            slider.addEventListener('input', (e) => {
+                const value = e.target.value;
+                const label = e.target.nextElementSibling;
+                if (label) label.textContent = value + '%';
+            });
+        });
+    </script>
+</body>
+</html>
